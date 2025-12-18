@@ -1,0 +1,8 @@
+streamlit
+pandas
+beautifulsoup4
+curl-cffi
+fake-useragent
+plotly
+numpy
+watchdog
