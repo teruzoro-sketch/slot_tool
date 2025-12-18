@@ -72,9 +72,11 @@ def load_memos():
             except: return {}
     return {}
 
-def save_memo(date_str, text):
+def save_memo(date_str, text, store_name):
     memos = load_memos()
-    memos[date_str] = text
+    # キーを「店舗名_日付」の形にする（例: 三ノ輪UNO_2024-12-18）
+    key = f"{store_name}_{date_str}"
+    memos[key] = text
     with open(MEMO_FILE, "w", encoding="utf-8") as f:
         json.dump(memos, f, ensure_ascii=False, indent=4)
 
@@ -249,7 +251,10 @@ with tab1:
         if len(sorted_dates) > 0:
             target_date = st.selectbox("日付を選択", sorted_dates, key="memo_date_selector")
             date_key_edit = target_date.strftime('%Y-%m-%d')
-            current_memo = memos.get(date_key_edit, "")
+            
+            # 【修正①】読み込むキーに店舗名をつける
+            memo_key = f"{selected_store}_{date_key_edit}"
+            current_memo = memos.get(memo_key, "")
             
             # 入力フォームとボタンを横並びに
             c_memo_in, c_memo_btn = st.columns([4, 1])
@@ -257,7 +262,9 @@ with tab1:
                 new_memo_val = st.text_input("メモ内容", value=current_memo, placeholder="例: イベント日、全台系あり", label_visibility="collapsed")
             with c_memo_btn:
                 if st.button("保存", type="primary", key="save_memo_btn"):
-                    save_memo(date_key_edit, new_memo_val)
+                    # 【修正②】保存時に店舗名(selected_store)を渡す
+                    save_memo(date_key_edit, new_memo_val, selected_store)
+                    
                     st.toast(f"{date_key_edit} のメモを保存しました")
                     time.sleep(1)
                     st.rerun()
@@ -414,7 +421,9 @@ with tab1:
         models_html_parts = []
         displayed_models = set()
 
-        memo = memos.get(date_key, "")
+        memo_key = f"{selected_store}_{date_key}"
+        memo = memos.get(memo_key, "")
+        
         if memo:
             models_html_parts.append(f'<span class="memo-item">📝 {memo}</span>')
 
