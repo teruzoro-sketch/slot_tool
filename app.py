@@ -360,12 +360,13 @@ with tab1:
     <style>
         .custom-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .custom-table th { background-color: #f8f9fa; padding: 12px 8px; text-align: center; border: 1px solid #dee2e6; font-weight: bold; color: #495057; }
-        .custom-table td { padding: 12px 10px; border: 1px solid #dee2e6; vertical-align: top; background-color: #fff; line-height: 1.6; }
-        .td-date   { width: 12%; text-align: center; font-weight: bold; white-space: nowrap; }
-        .td-total  { width: 10%; text-align: right; font-weight: bold; font-size: 15px; }
-        .td-avg    { width: 8%; text-align: right; font-weight: bold; }
+        /* ↓ここ修正しました（color: #333; を追加） */
+        .custom-table td { padding: 12px 10px; border: 1px solid #dee2e6; vertical-align: top; background-color: #fff; line-height: 1.6; color: #333; }
+        .td-date   { width: 12%; text-align: center; font-weight: bold; white-space: nowrap; color: #333; }
+        .td-total  { width: 10%; text-align: right; font-weight: bold; font-size: 15px; color: #333; }
+        .td-avg    { width: 8%; text-align: right; font-weight: bold; color: #333; }
         .td-g      { width: 10%; text-align: right; color: #666; font-size: 13px; }
-        .td-models { width: 60%; text-align: left; font-size: 13px; }
+        .td-models { width: 60%; text-align: left; font-size: 13px; color: #333; }
         .val-plus { color: #d32f2f !important; }
         .val-minus { color: #333 !important; }
         .model-line { display: inline-block; margin-right: 12px; margin-bottom: 4px; }
