@@ -16,35 +16,45 @@ from curl_cffi import requests
 from fake_useragent import UserAgent
 
 # ==========================================
-# 🏪 店舗リスト設定エリア
+# 🏪 店舗リスト読み込みロジック (stores.txt対応)
 # ==========================================
-STORE_CONFIG = {
-    "三ノ輪UNO": {
-        "url": "https://min-repo.com/tag/%e4%b8%89%e3%83%8e%e8%bc%aauno/",
-        "event_text": "旧イベ: 1日, 11日, 20日, 21日"
-    },
-    "楽園アメ横": {
-        "url": "https://min-repo.com/tag/%e6%a5%bd%e5%9c%92%e3%82%a2%e3%83%a1%e6%a8%aa%e5%ba%97/",
-        "event_text": "旧イベ: 11日, 22日, 月日ゾロ目の日 / 周年: 1月6日"
-    },
-    "エスパス上野新館": {
-        "url": "https://min-repo.com/tag/%e3%82%a8%e3%82%b9%e3%83%91%e3%82%b9%e6%97%a5%e6%8b%93%e4%b8%8a%e9%87%8e%e6%96%b0%e9%a4%a8/",
-        "event_text": "旧イベ: 4のつく日, 7のつく日, 月日ゾロ目の日 / 特日: 14日"
-    },
-    "エスパス上野本館": {
-        "url": "https://min-repo.com/tag/%e3%82%a8%e3%82%b9%e3%83%91%e3%82%b9%e6%97%a5%e6%8b%93%e4%b8%8a%e9%87%8e%e6%9c%ac%e9%a4%a8/",
-        # ▼ ここを更新しました
-        "event_text": "旧イベ: 7のつく日 / 1,11,21,22,25日 / 月日ゾロ目 / 第1土曜日"
-    },
-    "ジャラン水元(旧ヴィーナス)": {
-        "url": "https://min-repo.com/tag/%e3%83%b4%e3%82%a3%e3%83%bc%e3%83%8a%e3%82%b9%e5%8d%97%e6%b0%b4%e5%85%831%e5%8f%b7%e5%ba%97/",
-        "event_text": "旧イベ: 5のつく日, 9のつく日 / 周年: 8月8日"
-    },
-    "マルハン亀有": {
-        "url": "https://min-repo.com/tag/%e3%83%9e%e3%83%ab%e3%83%8f%e3%83%b3%e4%ba%80%e6%9c%89%e5%ba%97/",
-        "event_text": "旧イベ: 3,5,7,8の日 / 1,11,14,22日 / 月日ゾロ目"
-    },
-}
+STORE_CONFIG_FILE = "stores.txt"
+STORE_CONFIG = {}
+
+def load_store_config():
+    """stores.txt から店舗設定を読み込む"""
+    config = {}
+    if not os.path.exists(STORE_CONFIG_FILE):
+        # ファイルがない場合のフォールバック（エラー回避）
+        return {}
+    
+    try:
+        with open(STORE_CONFIG_FILE, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                # コメント行(#)や空行はスキップ
+                if not line or line.startswith("#"):
+                    continue
+                
+                # パイプ(|)で3つに分割
+                parts = line.split("|")
+                if len(parts) >= 2:
+                    name = parts[0].strip()
+                    url = parts[1].strip()
+                    # 3つめ（イベント情報）がない場合は空文字にする
+                    event_text = parts[2].strip() if len(parts) > 2 else ""
+                    
+                    config[name] = {
+                        "url": url,
+                        "event_text": event_text
+                    }
+    except Exception as e:
+        st.error(f"店舗リストの読み込みに失敗しました: {e}")
+    
+    return config
+
+# 起動時に一度だけ読み込む
+STORE_CONFIG = load_store_config()
 
 # ==========================================
 # 🕒 収集の安全時間帯ガード
@@ -245,8 +255,12 @@ def save_daily_data(detail_url, date_str, save_dir):
 # 🚀 実行エントリーポイント
 # ==========================================
 def run_scraping(store_name, start_date, end_date, max_workers=3): 
+    # STORE_CONFIGはファイルから読み込まれているため、ここでの変更は不要
     store_info = STORE_CONFIG.get(store_name)
-    if not store_info: return
+    if not store_info:
+        st.error(f"店舗情報が見つかりません: {store_name}")
+        return
+
     save_dir = store_name 
     if not os.path.exists(save_dir): os.makedirs(save_dir)
 

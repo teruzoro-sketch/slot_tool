@@ -382,14 +382,79 @@ with tab1:
     else: st.info("表示できるデータがありません")
 
 with tab2:
-    st.subheader("🔥 店長推し分析")
+    st.subheader("🔥 店長推し分析 (機種別)")
+    
     if not df_all.empty:
-        stats = df_all.groupby('機種', observed=False).agg(平均差枚=('差枚', 'mean'), 勝率=('差枚', lambda x: (x>0).mean()*100), 平均G数=('G数', 'mean'), サンプル数=('台番', 'count'), 合計差枚=('差枚', 'sum')).reset_index()
-        valid = stats[stats['サンプル数'] >= 5]
+        # データ集計
+        stats = df_all.groupby('機種', observed=False).agg(
+            平均差枚=('差枚', 'mean'), 
+            勝率=('差枚', lambda x: (x>0).mean()*100), 
+            平均G数=('G数', 'mean'), 
+            サンプル数=('台番', 'count'), 
+            合計差枚=('差枚', 'sum')
+        ).reset_index()
+        
+        # サンプル数5以上の機種に絞る（ノイズ除去）
+        valid = stats[stats['サンプル数'] >= 5].copy()
+        
         if not valid.empty:
-            fig = px.scatter(valid, x="勝率", y="平均差枚", size="平均G数", color="合計差枚", hover_name="機種", text="機種", color_continuous_scale=['blue', 'white', 'red'], range_color=[-50000, 50000], size_max=50)
+            # --- スマホ用調整エリア ---
+            c_view1, c_view2 = st.columns(2)
+            # 文字が邪魔なときはオフにできるようにする
+            show_labels = c_view1.toggle("機種名を表示", value=True)
+            # プラスの台だけ見たいとき用
+            show_only_plus = c_view2.toggle("プラス機種のみ", value=False)
+            
+            if show_only_plus:
+                valid = valid[valid['平均差枚'] > 0]
+
+            # バブルチャート作成
+            fig = px.scatter(
+                valid, 
+                x="勝率", 
+                y="平均差枚", 
+                size="平均G数", 
+                color="合計差枚", 
+                hover_name="機種", 
+                text="機種" if show_labels else None, # スイッチで切り替え
+                color_continuous_scale=['blue', 'white', 'red'], 
+                range_color=[-30000, 30000], # 色の範囲を固定して見やすく
+                size_max=60 # バブルを少し大きく
+            )
+            
+            # グラフのレイアウト調整（ここがスマホ対策の肝）
+            fig.update_layout(
+                height=550, # スマホ用に縦長にする
+                font=dict(size=14), # 全体の文字を大きく
+                xaxis=dict(title="勝率 (%)", title_font=dict(size=16), tickfont=dict(size=14)),
+                yaxis=dict(title="平均差枚 (枚)", title_font=dict(size=16), tickfont=dict(size=14)),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(l=20, r=20, t=40, b=20) # 余白を調整
+            )
+            
+            # 文字の位置調整（重なりにくいように上側に）
+            if show_labels:
+                fig.update_traces(textposition='top center')
+
             st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(valid.sort_values('平均差枚', ascending=False), use_container_width=True)
+            
+            # スマホだと表の方が見やすい場合もあるので、下に見やすく配置
+            st.markdown("##### 📋 ランキングデータ")
+            st.dataframe(
+                valid[['機種', '勝率', '平均差枚', '平均G数', 'サンプル数']]
+                .sort_values('平均差枚', ascending=False)
+                .style.format({
+                    '勝率': '{:.1f}%', 
+                    '平均差枚': '{:+.0f}枚', 
+                    '平均G数': '{:,.0f}G'
+                }),
+                use_container_width=True,
+                height=300
+            )
+        else:
+            st.warning("集計に必要なデータ数が足りません（サンプル数5以上）")
+    else:
+        st.info("データがありません")
 
 with tab3:
     st.subheader("🕵️‍♀️ 不発・塊検知")
