@@ -16,7 +16,7 @@ from curl_cffi import requests
 from fake_useragent import UserAgent
 
 # ==========================================
-# 🏪 店舗リスト設定エリア (秋葉原削除済み)
+# 🏪 店舗リスト設定エリア
 # ==========================================
 STORE_CONFIG = {
     "三ノ輪UNO": {
@@ -39,13 +39,17 @@ STORE_CONFIG = {
         "url": "https://min-repo.com/tag/%e3%83%b4%e3%82%a3%e3%83%bc%e3%83%8a%e3%82%b9%e5%8d%97%e6%b0%b4%e5%85%831%e5%8f%b7%e5%ba%97/",
         "event_text": "旧イベ: 5のつく日, 9のつく日 / 周年: 8月8日"
     },
+    "マルハン亀有": {
+        "url": "https://min-repo.com/tag/%e3%83%9e%e3%83%ab%e3%83%8f%e3%83%b3%e4%ba%80%e6%9c%89%e5%ba%97/",
+        "event_text": "旧イベ: 3,5,7,8の日 / 1,11,14,22日 / 月日ゾロ目"
+    },
 }
 
 # ==========================================
 # 🕒 収集の安全時間帯ガード
 # ==========================================
 SCRAPE_SAFE_START = (8, 0)   # 08:00
-SCRAPE_SAFE_END   = (23, 59) # 広めに設定
+SCRAPE_SAFE_END   = (9, 59)  # 09:59
 
 def is_safe_scrape_time(now_dt=None):
     if now_dt is None: now_dt = datetime.now()
@@ -89,7 +93,6 @@ def load_proxies(filename=PROXY_LIST_FILE):
     except: return []
 
 def get_soup(url, max_retries=3):
-    """curl_cffiを使ったリクエスト (ブロック回避強化)"""
     proxies_list = load_proxies()
     attempt_methods = [{"proxy": None, "type": "Direct"}]
     if proxies_list:
@@ -167,6 +170,11 @@ def process_extra_data(target_machines):
     return extra_data_map
 
 def save_daily_data(detail_url, date_str, save_dir):
+    # ▼【安全対策】もし処理開始時点で時間が過ぎていたら、スキップする (未実行タスクのキャンセル)
+    if not is_safe_scrape_time():
+        return False
+    
+    # ここまで到達できた＝実行許可が出たタスクなので、以降は最後まで処理を完遂させる
     if not os.path.exists(save_dir): os.makedirs(save_dir)
     filename = os.path.join(save_dir, f"{date_str}.csv")
     if os.path.exists(filename): return "EXIST"
@@ -247,6 +255,11 @@ def run_scraping(store_name, start_date, end_date, max_workers=3):
     progress_bar = st.progress(0)
     status_text.info(f"🚀 {store_name} のデータを収集中...")
 
+    if not is_safe_scrape_time():
+        status_text.error(f"⛔ 時間外です ({safe_window_text()})。9:59を過ぎたため収集を開始できません。")
+        progress_bar.empty()
+        return
+
     current_url = store_info["url"]
     current_year = datetime.now().year
     last_month = 13
@@ -255,6 +268,10 @@ def run_scraping(store_name, start_date, end_date, max_workers=3):
     max_scan_pages = 25 
 
     while page_count <= max_scan_pages:
+        if not is_safe_scrape_time():
+            status_text.warning(f"⏰ 時間オーバー ({safe_window_text()})！ 進行中の処理が完了次第、停止します...")
+            break
+
         status_text.write(f"🔍 {store_name} リンク探索中... {page_count}ページ目")
         soup = get_soup(current_url)
         if not soup: break
@@ -285,7 +302,7 @@ def run_scraping(store_name, start_date, end_date, max_workers=3):
         else: break
 
     total_tasks = len(target_tasks)
-    if total_tasks == 0:
+    if total_tasks == 0 and page_count != 999 and is_safe_scrape_time():
         status_text.warning(f"⚠️ {store_name}: データが見つかりませんでした")
         return
 
@@ -293,15 +310,23 @@ def run_scraping(store_name, start_date, end_date, max_workers=3):
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_date = {executor.submit(save_daily_data, href, d_str, save_dir): d_str for href, d_str in target_tasks}
         for future in as_completed(future_to_date):
+            # メインループ側でbreakするとwaitしてしまうが、
+            # ここでは「完了したやつを受け取る」だけなのでループを回し続ける。
+            # 時間外になったら save_daily_data の冒頭で False が返ってくるので、一瞬で消化される。
             d_str = future_to_date[future]
             try:
                 res = future.result()
-                completed += 1
+                if res: # Trueなら成功、Falseならスキップまたは失敗
+                    completed += 1
                 prog = int((completed / total_tasks) * 100)
                 progress_bar.progress(prog)
             except: pass
 
-    status_text.success(f"🎉 {store_name}: 完了 ({completed}/{total_tasks})")
+    if completed > 0:
+        status_text.success(f"🎉 {store_name}: 完了 ({completed}/{total_tasks})")
+    elif not is_safe_scrape_time():
+        status_text.warning("⏰ 時間切れのため、未実行のタスクはスキップされました。")
+    
     time.sleep(1)
     status_text.empty()
     progress_bar.empty()

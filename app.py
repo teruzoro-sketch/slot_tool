@@ -59,6 +59,22 @@ st.markdown("""
         .recommend-box { border: 2px solid #ffc107; background-color: #fffbf2; padding: 15px; border-radius: 10px; margin-bottom: 20px; }
         .analysis-box { background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 8px; padding: 15px; margin-top: 20px; }
         .pagination-box { text-align: center; padding: 10px; background: #f0f2f6; border-radius: 10px; margin-bottom: 20px; }
+        .custom-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .custom-table th { background-color: #f8f9fa; padding: 12px 8px; text-align: center; border: 1px solid #dee2e6; font-weight: bold; color: #495057; }
+        .custom-table td { padding: 12px 10px; border: 1px solid #dee2e6; vertical-align: top; background-color: #fff; line-height: 1.6; color: #333; }
+        .td-date   { width: 12%; text-align: center; font-weight: bold; white-space: nowrap; color: #333; }
+        .td-total  { width: 10%; text-align: right; font-weight: bold; font-size: 15px; color: #333; }
+        .td-avg    { width: 8%; text-align: right; font-weight: bold; color: #333; }
+        .td-g      { width: 10%; text-align: right; color: #666; font-size: 13px; }
+        .td-models { width: 60%; text-align: left; font-size: 13px; color: #333; }
+        .val-plus { color: #d32f2f !important; }
+        .val-minus { color: #333 !important; }
+        .model-line { display: inline-block; margin-right: 12px; margin-bottom: 4px; }
+        .memo-item { display: block; color: #0d6efd; font-weight: bold; margin-bottom: 6px; background-color: #e7f1ff; padding: 4px 8px; border-radius: 4px; }
+        .icon-star { color: #ff9800; font-weight: bold; font-size: 1.1em; } 
+        .icon-double { color: #e91e63; font-weight: bold; font-size: 1.1em; } 
+        .icon-circle { color: #4caf50; font-weight: bold; } 
+        .icon-spin { color: #6610f2; font-weight: bold; font-size: 1.1em; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -74,7 +90,7 @@ def load_memos():
 
 def save_memo(date_str, text, store_name):
     memos = load_memos()
-    # キーを「店舗名_日付」の形にする（例: 三ノ輪UNO_2024-12-18）
+    # キーを「店舗名_日付」の形にする
     key = f"{store_name}_{date_str}"
     memos[key] = text
     with open(MEMO_FILE, "w", encoding="utf-8") as f:
@@ -172,12 +188,21 @@ else:
     df_all = pd.DataFrame()
 
 # ----------------------------------------------
-# 🛠 データの更新・収集
+# 🛠 データの更新・収集 (ここを修正)
 # ----------------------------------------------
 with st.sidebar.expander("🛠 データの更新・収集", expanded=False):
-    # ★ここに注意書きを復活させました★
+    # ▼ 現在時刻を取得して安全時間をチェック
+    now = datetime.now()
+    is_safe_time = (now.hour == 8) or (now.hour == 9)
+    # デバッグ用（いつでもテストしたい場合はここをTrueにする）
+    # is_safe_time = True 
+    
     st.write(f"**{selected_store}** のデータを取得します。")
-    st.warning("⚠️ **収集推奨時間: 8:00 〜 9:59**\nこれ以外の時間はデータが正確に取れない可能性があります。")
+    
+    if is_safe_time:
+        st.success("✅ 現在はデータ収集可能です (8:00〜9:59)")
+    else:
+        st.error("⛔ 時間外のため機能ロック中 (8:00〜9:59 のみ可能)")
     
     today = datetime.now().date()
     date_range_scrape = st.date_input("取得範囲", value=(today - timedelta(days=7), today - timedelta(days=1)), max_value=today, key="scrape_date")
@@ -185,25 +210,29 @@ with st.sidebar.expander("🛠 データの更新・収集", expanded=False):
     
     col_b1, col_b2 = st.columns(2)
     
-    # 選択中の店舗だけ更新
-    if st.button(f"この店舗のみ", type="secondary"): 
+    # 選択中の店舗だけ更新 (時間外なら disabled)
+    if st.button(f"この店舗のみ", type="secondary", disabled=not is_safe_time): 
         if isinstance(date_range_scrape, tuple) and len(date_range_scrape) == 2:
             with st.spinner(f"{selected_store} を収集中..."):
                 logic.run_scraping(selected_store, date_range_scrape[0], date_range_scrape[1], max_workers)
                 st.cache_data.clear()
                 st.rerun()
 
-    # 全店舗一括更新
-    if st.button("🔄 全店舗まとめて収集", type="primary"):
+    # 全店舗一括更新 (時間外なら disabled)
+    if st.button("🔄 全店舗まとめて収集", type="primary", disabled=not is_safe_time):
         if isinstance(date_range_scrape, tuple) and len(date_range_scrape) == 2:
             s_date, e_date = date_range_scrape
             total_stores = len(store_names)
             
-            # 全体の進捗バー
             progress_bar_all = st.progress(0)
             status_text_all = st.empty()
             
             for i, target_store in enumerate(store_names):
+                # 途中で時間が過ぎたら止めるチェックは logic 側でもやっているが念のため
+                if not logic.is_safe_scrape_time():
+                    st.error("⏰ 時間オーバーのため中断しました")
+                    break
+
                 status_text_all.write(f"⏳ [{i+1}/{total_stores}] **{target_store}** のデータを収集中...")
                 try:
                     logic.run_scraping(target_store, s_date, e_date, max_workers)
@@ -212,7 +241,7 @@ with st.sidebar.expander("🛠 データの更新・収集", expanded=False):
                     st.error(f"❌ {target_store} エラー: {e}")
                 
                 progress_bar_all.progress((i + 1) / total_stores)
-                time.sleep(1.5) # サーバー負荷軽減のための待機
+                time.sleep(1.5)
             
             status_text_all.success("🎉 全店舗の収集が完了しました！")
             time.sleep(2)
@@ -234,157 +263,73 @@ if filter_info: st.info(f"⚡ フィルター: {' / '.join(filter_info)}")
 
 tab1, tab2, tab3, tab4 = st.tabs(["📅 日別レポート", "🔥 店長推し分析 (機種)", "🕵️‍♀️ 不発・並び発掘", "🔍 鉄板台サーチ＆多角分析"])
 
-# ---------------------------------------------------------
-# タブ1：日別レポート (レイアウト修正・縦並び版)
-# ---------------------------------------------------------
 with tab1:
     st.subheader("📅 日別サマリー (3ヶ月一覧)")
-
-    # データを日付順にソート
     sorted_dates = sorted(df_all['日付'].unique(), reverse=True)
     memos = load_memos()
 
-    # --- 1. 機能エリア (縦並びに変更して広々と表示) ---
-    
-    # [メモ編集エリア]
     with st.expander("📝 メモを編集する", expanded=False):
         if len(sorted_dates) > 0:
             target_date = st.selectbox("日付を選択", sorted_dates, key="memo_date_selector")
             date_key_edit = target_date.strftime('%Y-%m-%d')
-            
-            # 【修正①】読み込むキーに店舗名をつける
             memo_key = f"{selected_store}_{date_key_edit}"
             current_memo = memos.get(memo_key, "")
             
-            # 入力フォームとボタンを横並びに
             c_memo_in, c_memo_btn = st.columns([4, 1])
             with c_memo_in:
                 new_memo_val = st.text_input("メモ内容", value=current_memo, placeholder="例: イベント日、全台系あり", label_visibility="collapsed")
             with c_memo_btn:
                 if st.button("保存", type="primary", key="save_memo_btn"):
-                    # 【修正②】保存時に店舗名(selected_store)を渡す
                     save_memo(date_key_edit, new_memo_val, selected_store)
-                    
                     st.toast(f"{date_key_edit} のメモを保存しました")
                     time.sleep(1)
                     st.rerun()
         else:
             st.info("データがありません")
 
-    # [生データ閲覧エリア]
     with st.expander("📂 その日の全台データを見る (機種絞り込み)", expanded=False):
         if len(sorted_dates) > 0:
-            # 日付選択と機種絞り込みを横並びに
             c_date, c_model = st.columns([1, 2])
-            
             with c_date:
                 view_date = st.selectbox("日付", sorted_dates, key="raw_data_date_selector")
             
-            # その日のデータを取得
             raw_df_day = df_all[df_all['日付'] == view_date].copy()
-            
-            # 確率計算
-            def calc_prob_safe(g, c):
-                return round(g / c, 1) if c > 0 else 9999.0
-
+            def calc_prob_safe(g, c): return round(g / c, 1) if c > 0 else 9999.0
             raw_df_day['BIG確率'] = raw_df_day.apply(lambda x: calc_prob_safe(x['G数'], x['BB']), axis=1)
             raw_df_day['合算確率'] = raw_df_day.apply(lambda x: calc_prob_safe(x['G数'], x['BB'] + x['RB']), axis=1)
-
-            # 機種リスト取得
+            
             all_models = sorted(raw_df_day['機種'].unique())
-            
             with c_model:
-                selected_models = st.multiselect(
-                    "機種で絞り込み", 
-                    all_models,
-                    placeholder="機種を選択 (未選択で全表示)"
-                )
+                selected_models = st.multiselect("機種で絞り込み", all_models, placeholder="機種を選択 (未選択で全表示)")
             
-            # 絞り込み実行
-            if selected_models:
-                raw_df_day = raw_df_day[raw_df_day['機種'].isin(selected_models)]
-
-            # 表示カラム
-            display_cols = ['機種', '台番', '差枚', 'G数', 'BB', 'RB', '合成', 'BIG確率', 'REG確率', '合算確率']
-            valid_cols = [c for c in display_cols if c in raw_df_day.columns]
-            
-            final_df = raw_df_day[valid_cols].sort_values('差枚', ascending=False)
-
-            # データフレーム表示
-            st.dataframe(
-                final_df.style.format({
-                    'G数': '{:,}',
-                    'BIG確率': '1/{:.1f}', 
-                    'REG確率': '1/{:.1f}', 
-                    '合算確率': '1/{:.1f}'
-                }),
-                column_config={
-                    "差枚": st.column_config.NumberColumn("差枚", format="%+d", help="プラスは赤バー"),
-                    "機種": st.column_config.TextColumn("機種名", width="medium"),
-                    "台番": st.column_config.TextColumn("台番", width="small"),
-                },
-                height=400,
-                use_container_width=True
-            )
-            
-            # 合計情報
+            if selected_models: raw_df_day = raw_df_day[raw_df_day['機種'].isin(selected_models)]
+            final_df = raw_df_day[['機種', '台番', '差枚', 'G数', 'BB', 'RB', '合成', 'BIG確率', 'REG確率', '合算確率']].sort_values('差枚', ascending=False)
+            st.dataframe(final_df.style.format({'G数': '{:,}', 'BIG確率': '1/{:.1f}', 'REG確率': '1/{:.1f}', '合算確率': '1/{:.1f}'}), column_config={"差枚": st.column_config.NumberColumn("差枚", format="%+d"), "機種": st.column_config.TextColumn("機種名", width="medium")}, height=400, use_container_width=True)
             total_diff = int(final_df['差枚'].sum())
-            avg_diff = int(final_df['差枚'].mean()) if len(final_df) > 0 else 0
-            st.caption(f"📊 表示中の合計: {len(final_df)}台 / 総差枚: {total_diff:+d}枚 / 平均: {avg_diff:+d}枚")
+            st.caption(f"📊 表示中の合計: {len(final_df)}台 / 総差枚: {total_diff:+d}枚")
         else:
             st.info("データがありません")
 
-    # --- 2. 凡例・ルール ---
     with st.expander("ℹ️ アイコンの意味・判定ルール (クリックで開閉)", expanded=True):
         st.markdown("""
         <div style="font-size: 0.9rem; line-height: 1.8;">
-            <b>★ 全勝/鉄板</b>: 勝率 <strong>100%</strong> かつ 平均G数 7,000G以上 (全台系の可能性特大)<br>
-            <b>◎ 絶好調</b>: 勝率 66%以上 かつ 平均差枚 +1,500枚以上 かつ <strong>平均G数 7,000G以上</strong><br>
-            <b>🌀 ぶん回し</b>: 機種全体の平均G数が <strong>7,000G</strong> 以上<br>
-            <b>○ 好調</b>: 勝率 <strong>50%</strong> 以上 かつ <strong>勝った台の平均G数が 7,000G以上</strong> (粘る価値あり)<br>
-            <span style="color:#0d6efd; font-weight:bold;">📝 メモ</span>: 自分で保存したメモ
-        </div>
-        """, unsafe_allow_html=True)
+            <b>★ 全勝/鉄板</b>: 勝率 100% かつ 平均G数 7,000G以上<br>
+            <b>◎ 絶好調</b>: 勝率 66%以上 かつ 差枚+1,500枚 かつ 平均G数 7,000G以上<br>
+            <b>🌀 ぶん回し</b>: 機種平均 7,000G以上<br>
+            <b>○ 好調</b>: 勝率 50%以上 かつ 勝ち台平均 7,000G以上<br>
+        </div>""", unsafe_allow_html=True)
     
     st.markdown("---")
-
-    # --- 3. メイン一覧表 (HTML) ---
     ITEMS_PER_PAGE = 90
     total_pages = max(1, -(-len(sorted_dates) // ITEMS_PER_PAGE)) 
-    
     if total_pages > 1:
         st.markdown('<div class="pagination-box">', unsafe_allow_html=True)
         col_p1, col_p2, col_p3 = st.columns([1, 2, 1])
-        with col_p2: 
-            current_page = st.number_input("ページ切り替え", 1, total_pages, 1, key="tab1_main_pagination_v2")
+        with col_p2: current_page = st.number_input("ページ切り替え", 1, total_pages, 1, key="tab1_main_pagination_v2")
         st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        current_page = 1
+    else: current_page = 1
     
     display_dates = sorted_dates[(current_page - 1) * ITEMS_PER_PAGE : current_page * ITEMS_PER_PAGE]
-
-    st.markdown("""
-    <style>
-        .custom-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .custom-table th { background-color: #f8f9fa; padding: 12px 8px; text-align: center; border: 1px solid #dee2e6; font-weight: bold; color: #495057; }
-        /* ↓ここ修正しました（color: #333; を追加） */
-        .custom-table td { padding: 12px 10px; border: 1px solid #dee2e6; vertical-align: top; background-color: #fff; line-height: 1.6; color: #333; }
-        .td-date   { width: 12%; text-align: center; font-weight: bold; white-space: nowrap; color: #333; }
-        .td-total  { width: 10%; text-align: right; font-weight: bold; font-size: 15px; color: #333; }
-        .td-avg    { width: 8%; text-align: right; font-weight: bold; color: #333; }
-        .td-g      { width: 10%; text-align: right; color: #666; font-size: 13px; }
-        .td-models { width: 60%; text-align: left; font-size: 13px; color: #333; }
-        .val-plus { color: #d32f2f !important; }
-        .val-minus { color: #333 !important; }
-        .model-line { display: inline-block; margin-right: 12px; margin-bottom: 4px; }
-        .memo-item { display: block; color: #0d6efd; font-weight: bold; margin-bottom: 6px; background-color: #e7f1ff; padding: 4px 8px; border-radius: 4px; }
-        .icon-star { color: #ff9800; font-weight: bold; font-size: 1.1em; } 
-        .icon-double { color: #e91e63; font-weight: bold; font-size: 1.1em; } 
-        .icon-circle { color: #4caf50; font-weight: bold; } 
-        .icon-spin { color: #6610f2; font-weight: bold; font-size: 1.1em; }
-    </style>
-    """, unsafe_allow_html=True)
-
     table_headers = '<thead><tr><th class="td-date">日付</th><th class="td-total">総差枚</th><th class="td-avg">平均</th><th class="td-g">平均G</th><th class="td-models">主力機種・メモ</th></tr></thead>'
     table_rows = ''
 
@@ -392,73 +337,43 @@ with tab1:
         df_day = df_all[df_all['日付'] == date_val].copy()
         date_key = date_val.strftime('%Y-%m-%d')
         day_week = df_day['曜日'].iloc[0]
-        
         total_diff = int(df_day['差枚'].sum())
         avg_diff = int(df_day['差枚'].mean())
         avg_g = int(df_day['G数'].mean())
-        
         is_event = str(date_val.day) in store_info.get('event_text', '')
         date_str = f"{date_val.strftime('%m/%d')}({day_week})"
         if is_event: date_str = f"🔥 {date_str}"
-        
         total_cls = "val-plus" if total_diff > 0 else "val-minus"
         avg_cls = "val-plus" if avg_diff > 0 else "val-minus"
         
         win_machines = df_day[df_day['差枚'] > 0]
-        if not win_machines.empty:
-            win_g_means = win_machines.groupby('機種')['G数'].mean()
-        else:
-            win_g_means = pd.Series(dtype=float)
-
-        model_stats = df_day.groupby('機種', observed=False).agg(
-            平均差枚=('差枚', 'mean'),
-            合計差枚=('差枚', 'sum'),
-            勝率=('差枚', lambda x: (x > 0).mean()),
-            平均G数=('G数', 'mean'),
-            台数=('台番', 'count')
-        ).reset_index()
-
+        win_g_means = win_machines.groupby('機種')['G数'].mean() if not win_machines.empty else pd.Series(dtype=float)
+        model_stats = df_day.groupby('機種', observed=False).agg(平均差枚=('差枚', 'mean'), 勝率=('差枚', lambda x: (x > 0).mean()), 平均G数=('G数', 'mean'), 台数=('台番', 'count')).reset_index()
+        
         models_html_parts = []
         displayed_models = set()
-
         memo_key = f"{selected_store}_{date_key}"
         memo = memos.get(memo_key, "")
-        
-        if memo:
-            models_html_parts.append(f'<span class="memo-item">📝 {memo}</span>')
+        if memo: models_html_parts.append(f'<span class="memo-item">📝 {memo}</span>')
 
         candidates = model_stats[model_stats['台数'] >= 3].sort_values('平均差枚', ascending=False)
         for _, row in candidates.iterrows():
             icon = ""
             m_name = row['機種']
             win_avg_g = win_g_means.get(m_name, 0)
-
-            if row['勝率'] == 1.0 and row['平均G数'] >= 7000: 
-                icon = "<span class='icon-star'>★</span>"
-            elif row['勝率'] >= 0.66 and row['平均差枚'] >= 1500 and row['平均G数'] >= 7000:
-                icon = "<span class='icon-double'>◎</span>"
-            elif row['平均G数'] >= 7000:
-                 icon = "<span class='icon-spin'>🌀</span>"
-
-            if not icon:
-                if row['勝率'] >= 0.5 and win_avg_g >= 7000:
-                    icon = "<span class='icon-circle'>○</span>"
-
-            if icon:
-                if m_name not in displayed_models:
-                    disp_val = f"{int(row['平均差枚']):+}"
-                    models_html_parts.append(f"<span class='model-line'>{icon} {m_name}({disp_val})</span>")
-                    displayed_models.add(m_name)
+            if row['勝率'] == 1.0 and row['平均G数'] >= 7000: icon = "<span class='icon-star'>★</span>"
+            elif row['勝率'] >= 0.66 and row['平均差枚'] >= 1500 and row['平均G数'] >= 7000: icon = "<span class='icon-double'>◎</span>"
+            elif row['平均G数'] >= 7000: icon = "<span class='icon-spin'>🌀</span>"
+            if not icon and row['勝率'] >= 0.5 and win_avg_g >= 7000: icon = "<span class='icon-circle'>○</span>"
+            if icon and m_name not in displayed_models:
+                models_html_parts.append(f"<span class='model-line'>{icon} {m_name}({int(row['平均差枚']):+})</span>")
+                displayed_models.add(m_name)
 
         models_html = "".join(models_html_parts) if models_html_parts else "-"
         table_rows += f'<tr><td class="td-date">{date_str}</td><td class="td-total {total_cls}">{total_diff:+,}</td><td class="td-avg {avg_cls}">{avg_diff:+,}</td><td class="td-g">{avg_g:,}</td><td class="td-models">{models_html}</td></tr>'
 
-    final_html = f'<table class="custom-table">{table_headers}<tbody>{table_rows}</tbody></table>'
-    
-    if len(display_dates) > 0:
-        st.markdown(final_html, unsafe_allow_html=True)
-    else:
-        st.info("表示できるデータがありません")
+    if len(display_dates) > 0: st.markdown(f'<table class="custom-table">{table_headers}<tbody>{table_rows}</tbody></table>', unsafe_allow_html=True)
+    else: st.info("表示できるデータがありません")
 
 with tab2:
     st.subheader("🔥 店長推し分析")
@@ -474,7 +389,6 @@ with tab3:
     st.subheader("🕵️‍♀️ 不発・塊検知")
     unlucky = df_all[(df_all['G数']>=5000) & (df_all['差枚']<=-500) & (df_all['REG確率']<=350)]
     if not unlucky.empty: st.error("不発ジャグラー候補"); st.dataframe(unlucky[['日付', '機種', '台番', '差枚', 'G数', 'RB', 'REG確率']], use_container_width=True)
-    
     dates = df_all['日付'].dt.date.unique()
     if len(dates) > 0:
         d = st.selectbox("並び検知日", dates)
@@ -484,26 +398,17 @@ with tab3:
         found = day_df[(day_df['MA3_G']>=7000) & (day_df['MA3_Diff']>=1500)]
         if not found.empty:
             st.success("🔥 並び候補発見")
-            for i, r in found.iterrows():
-                st.table(day_df[(day_df['台番'] >= r['台番']-1) & (day_df['台番'] <= r['台番']+1)][['機種', '台番', '差枚', 'G数']])
+            for i, r in found.iterrows(): st.table(day_df[(day_df['台番'] >= r['台番']-1) & (day_df['台番'] <= r['台番']+1)][['機種', '台番', '差枚', 'G数']])
 
-# ---------------------------------------------------------
-# タブ4：鉄板台サーチ＆多角分析 (スマホ最適化・縦並び版)
-# ---------------------------------------------------------
 with tab4:
     st.header("🔍 鉄板台サーチ＆多角分析")
-    
-    # データソース選択
     target_src = st.radio("データソース", ["現在選択中の期間 (サイドバー)", "全期間 (読込済データ)"], horizontal=True)
     base_df = df_all_raw.copy() if "全期間" in target_src else df_all.copy()
-    
-    # 確率計算
     def calc_p(g, c): return round(g/c, 1) if c>0 else 9999.0
     base_df['BIG確率'] = base_df.apply(lambda x: calc_p(x['G数'], x['BB']), axis=1)
     base_df['REG確率'] = base_df.apply(lambda x: calc_p(x['G数'], x['RB']), axis=1)
     base_df['合算確率'] = base_df.apply(lambda x: calc_p(x['G数'], x['BB']+x['RB']), axis=1)
 
-    # 検索条件入力
     c1, c2 = st.columns(2)
     min_g = int(c1.selectbox("回転数以上", [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000], index=2))
     min_d = c2.number_input("差枚数以上", value=1000, step=100)
@@ -514,65 +419,30 @@ with tab4:
     use_r = cp2.checkbox("REG"); rv = cp2.number_input("1/", value=300.0, disabled=not use_r)
     use_t = cp3.checkbox("合算"); tv = cp3.number_input("1/", value=130.0, disabled=not use_t)
 
-    # フィルタリング実行
     res = base_df[(base_df['G数']>=min_g) & (base_df['差枚']>=min_d)].copy()
     if use_b: res = res[res['BIG確率']<=bv]
     if use_r: res = res[res['REG確率']<=rv]
     if use_t: res = res[res['合算確率']<=tv]
 
-    # 結果表示
     if not res.empty:
         st.markdown('<div class="analysis-box">', unsafe_allow_html=True)
         st.subheader("📈 傾向分析 (エース台番)")
-        
-        # 集計
-        stats = res.groupby(['台番', '機種']).agg(
-            回数=('日付', 'count'), 
-            平均差枚=('差枚', 'mean'), 
-            直近=('日付', 'max')
-        ).reset_index().sort_values(['回数', '直近'], ascending=[False, False])
+        stats = res.groupby(['台番', '機種']).agg(回数=('日付', 'count'), 平均差枚=('差枚', 'mean'), 直近=('日付', 'max')).reset_index().sort_values(['回数', '直近'], ascending=[False, False])
         
         if not stats.empty:
             stats['Label'] = stats['台番'].astype(str) + " (" + stats['機種'] + ")"
-            
-            # --- 1. 横棒グラフ (ランキング) ---
             st.markdown("##### 🥇 条件達成回数ランキング")
-            fig = px.bar(
-                stats.head(15), 
-                x='回数', 
-                y='Label', 
-                orientation='h', 
-                color='平均差枚', 
-                text=stats.head(15)['直近'].dt.strftime('%m/%d')
-            )
+            fig = px.bar(stats.head(15), x='回数', y='Label', orientation='h', color='平均差枚', text=stats.head(15)['直近'].dt.strftime('%m/%d'))
             fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=400)
             st.plotly_chart(fig, use_container_width=True)
-            
-            # --- 2. 円グラフ (機種シェア) ---
             st.markdown("##### 🥧 機種別シェア")
-            pie = px.pie(
-                res['機種'].value_counts().reset_index(), 
-                values='count', 
-                names='機種', 
-                hole=0.4
-            )
+            pie = px.pie(res['機種'].value_counts().reset_index(), values='count', names='機種', hole=0.4)
             st.plotly_chart(pie, use_container_width=True)
             
-        # 詳細テーブル
         st.markdown("##### 📋 エース台番リスト")
-        st.dataframe(
-            stats.head(20).style.format({'平均差枚':'{:.0f}'}), 
-            use_container_width=True
-        )
+        st.dataframe(stats.head(20).style.format({'平均差枚':'{:.0f}'}), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        
-        # 全リスト
         st.subheader("📝 抽出データ全リスト")
-        st.dataframe(
-            res[['日付','機種','台番','差枚','G数','合算確率','BIG確率','REG確率']]
-            .sort_values('差枚', ascending=False)
-            .style.format({'日付':'{:%Y-%m-%d}','差枚':'{:+d}'}), 
-            use_container_width=True
-        )
+        st.dataframe(res[['日付','機種','台番','差枚','G数','合算確率','BIG確率','REG確率']].sort_values('差枚', ascending=False).style.format({'日付':'{:%Y-%m-%d}','差枚':'{:+d}'}), use_container_width=True)
     else:
         st.warning("条件に合う台はありません")
