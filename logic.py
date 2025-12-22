@@ -21,7 +21,7 @@ from fake_useragent import UserAgent
 STORE_CONFIG = {
     "三ノ輪UNO": {
         "url": "https://min-repo.com/tag/%e4%b8%89%e3%83%8e%e8%bc%aauno/",
-        "event_text": "旧イベ: 1のつく日 (1, 11, 21, 31) / ゾロ目"
+        "event_text": "旧イベ: 1日, 11日, 20日, 21日"
     },
     "楽園アメ横": {
         "url": "https://min-repo.com/tag/%e6%a5%bd%e5%9c%92%e3%82%a2%e3%83%a1%e6%a8%aa%e5%ba%97/",
@@ -33,7 +33,8 @@ STORE_CONFIG = {
     },
     "エスパス上野本館": {
         "url": "https://min-repo.com/tag/%e3%82%a8%e3%82%b9%e3%83%91%e3%82%b9%e6%97%a5%e6%8b%93%e4%b8%8a%e9%87%8e%e6%9c%ac%e9%a4%a8/",
-        "event_text": "月イチ周年日: 21日 / 周年: 8月21日 / 7のつく日 / ゾロ目"
+        # ▼ ここを更新しました
+        "event_text": "旧イベ: 7のつく日 / 1,11,21,22,25日 / 月日ゾロ目 / 第1土曜日"
     },
     "ジャラン水元(旧ヴィーナス)": {
         "url": "https://min-repo.com/tag/%e3%83%b4%e3%82%a3%e3%83%bc%e3%83%8a%e3%82%b9%e5%8d%97%e6%b0%b4%e5%85%831%e5%8f%b7%e5%ba%97/",
@@ -170,11 +171,9 @@ def process_extra_data(target_machines):
     return extra_data_map
 
 def save_daily_data(detail_url, date_str, save_dir):
-    # ▼【安全対策】もし処理開始時点で時間が過ぎていたら、スキップする (未実行タスクのキャンセル)
     if not is_safe_scrape_time():
         return False
     
-    # ここまで到達できた＝実行許可が出たタスクなので、以降は最後まで処理を完遂させる
     if not os.path.exists(save_dir): os.makedirs(save_dir)
     filename = os.path.join(save_dir, f"{date_str}.csv")
     if os.path.exists(filename): return "EXIST"
@@ -310,13 +309,10 @@ def run_scraping(store_name, start_date, end_date, max_workers=3):
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_date = {executor.submit(save_daily_data, href, d_str, save_dir): d_str for href, d_str in target_tasks}
         for future in as_completed(future_to_date):
-            # メインループ側でbreakするとwaitしてしまうが、
-            # ここでは「完了したやつを受け取る」だけなのでループを回し続ける。
-            # 時間外になったら save_daily_data の冒頭で False が返ってくるので、一瞬で消化される。
             d_str = future_to_date[future]
             try:
                 res = future.result()
-                if res: # Trueなら成功、Falseならスキップまたは失敗
+                if res: 
                     completed += 1
                 prog = int((completed / total_tasks) * 100)
                 progress_bar.progress(prog)

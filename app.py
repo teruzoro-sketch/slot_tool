@@ -90,7 +90,6 @@ def load_memos():
 
 def save_memo(date_str, text, store_name):
     memos = load_memos()
-    # キーを「店舗名_日付」の形にする
     key = f"{store_name}_{date_str}"
     memos[key] = text
     with open(MEMO_FILE, "w", encoding="utf-8") as f:
@@ -147,6 +146,9 @@ st.sidebar.title("🎰 スロット攻略 Pro")
 store_names = list(logic.STORE_CONFIG.keys())
 selected_store = st.sidebar.selectbox("🏟️ 店舗を選択", store_names)
 store_info = logic.STORE_CONFIG[selected_store]
+# ▼ 【追加】ここにイベント情報を表示するようにしました
+st.sidebar.info(f"📅 {store_info.get('event_text', '情報なし')}")
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 data_folder = os.path.join(current_dir, selected_store)
 df_all_raw = load_and_process_data(data_folder)
@@ -174,6 +176,9 @@ if not df_all_raw.empty:
         custom_days_str = st.text_input("特定日", placeholder="例: 9, 19, 29")
         selected_weekdays = st.multiselect("曜日", ["月", "火", "水", "木", "金", "土", "日"], default=[])
         selected_weeks = st.multiselect("週 (第n週)", [1, 2, 3, 4, 5], default=[])
+        # ▼ 【追加】月日ゾロ目フィルター
+        is_doublet = st.checkbox("月日ゾロ目 (1/1, 2/2...)")
+
     df_filtered = df_period.copy()
     filter_info = []
     if custom_days_str:
@@ -183,18 +188,22 @@ if not df_all_raw.empty:
         except: pass
     if selected_weekdays: df_filtered = df_filtered[df_filtered['曜日'].isin(selected_weekdays)]; filter_info.append(f"曜日: {selected_weekdays}")
     if selected_weeks: df_filtered = df_filtered[df_filtered['週'].isin(selected_weeks)]; filter_info.append(f"週: 第{selected_weeks}")
+    
+    # ▼ 【追加】月日ゾロ目フィルターロジック
+    if is_doublet:
+        df_filtered = df_filtered[df_filtered['日付'].dt.month == df_filtered['日付'].dt.day]
+        filter_info.append("月日ゾロ目")
+
     df_all = df_filtered.copy()
 else:
     df_all = pd.DataFrame()
 
 # ----------------------------------------------
-# 🛠 データの更新・収集 (ここを修正)
+# 🛠 データの更新・収集
 # ----------------------------------------------
 with st.sidebar.expander("🛠 データの更新・収集", expanded=False):
-    # ▼ 現在時刻を取得して安全時間をチェック
     now = datetime.now()
     is_safe_time = (now.hour == 8) or (now.hour == 9)
-    # デバッグ用（いつでもテストしたい場合はここをTrueにする）
     # is_safe_time = True 
     
     st.write(f"**{selected_store}** のデータを取得します。")
@@ -210,7 +219,6 @@ with st.sidebar.expander("🛠 データの更新・収集", expanded=False):
     
     col_b1, col_b2 = st.columns(2)
     
-    # 選択中の店舗だけ更新 (時間外なら disabled)
     if st.button(f"この店舗のみ", type="secondary", disabled=not is_safe_time): 
         if isinstance(date_range_scrape, tuple) and len(date_range_scrape) == 2:
             with st.spinner(f"{selected_store} を収集中..."):
@@ -218,7 +226,6 @@ with st.sidebar.expander("🛠 データの更新・収集", expanded=False):
                 st.cache_data.clear()
                 st.rerun()
 
-    # 全店舗一括更新 (時間外なら disabled)
     if st.button("🔄 全店舗まとめて収集", type="primary", disabled=not is_safe_time):
         if isinstance(date_range_scrape, tuple) and len(date_range_scrape) == 2:
             s_date, e_date = date_range_scrape
@@ -228,7 +235,6 @@ with st.sidebar.expander("🛠 データの更新・収集", expanded=False):
             status_text_all = st.empty()
             
             for i, target_store in enumerate(store_names):
-                # 途中で時間が過ぎたら止めるチェックは logic 側でもやっているが念のため
                 if not logic.is_safe_scrape_time():
                     st.error("⏰ 時間オーバーのため中断しました")
                     break
