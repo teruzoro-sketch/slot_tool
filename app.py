@@ -22,6 +22,75 @@ st.set_page_config(page_title="Slot Master Pro", layout="wide", page_icon="🎰"
 
 MEMO_FILE = "daily_memos.json"
 
+# ▼ 【2025年12月版】メーカー・グループ辞書 (最新台対応)
+MAKER_DICT = {
+    "🤡 北電子 (ジャグラー)": [
+        "ジャグラー", "マイジャグ", "ファンキー", "ハッピー", "アイム", "ゴージャグ", 
+        "ミスタージャグラー", "ジャグラーガールズ", "ダンまち", "グランベルム"
+    ],
+    "👽 Sammy系 (サミー/ロデオ/銀座)": [
+        "北斗", "カバネリ", "防振り", "エウレカ", "ゴールデンカムイ", "コードギアス", 
+        "幼女戦記", "頭文字D", "傷物語", "バイオハザード RE:2", "ディスクアップ", 
+        "ガメラ", "アラジン", "ファイヤードリフト", "東京リベンジャーズ", "A-SLOT", 
+        "鬼武者3"
+    ],
+    "🤖 SANKYO系 (SANKYO/ビスティ)": [
+        "ヴァルヴレイヴ", "ヴヴヴ", "からくり", "シンフォギア", "炎炎", "マクロス", 
+        "ユニコーン", "かぐや様", "エヴァ", "ゴジラ", "アクエリオン", "ガンダム",
+        "アイドルマスター"
+    ],
+    "⚡ ユニバ系 (ユニバーサル/アクロス)": [
+        "沖ドキ", "天膳", "バジリスク", "まどか", "ハーデス", "花火", "ハナビ", "バーサス", 
+        "アクロス", "サンダー", "ファミスタ", "ワードオブライツ", "クランキー", 
+        "緑ドン", "桃太郎電鉄"
+    ],
+    "🐼 大都系 (大都技研)": [
+        "番長", "リゼロ", "鏡", "吉宗", "アオハル", "SAO", "ソードアート", 
+        "冴えない", "クレア", "秘宝伝", "政宗", "忍魂", "ゾンビランドサガ"
+    ],
+    "🐒 山佐系 (ヤマサ/セブンリーグ)": [
+        "モンキーターン", "ゴッドイーター", "パルサー", "転スラ", "ナイツ", 
+        "キン肉マン", "ウィッチ", "ゼーガペイン", "ネオプラネット", "ハイパーラッシュ"
+    ],
+    "🕊️ オリンピア/平和": [
+        "ToLOVEる", "トラブル", "戦国乙女", "主役は銭形", "麻雀格闘", "ルパン", 
+        "ガルパン", "黄門ちゃま", "バキ", "刃牙", "ラブ嬢", "バンドリ"
+    ],
+    "🐺 エンターライズ/カプコン系": [
+        "鬼武者", "バイオハザード", "モンハン", "モンスターハンター", 
+        "デビルメイクライ", "ストリートファイター"
+    ],
+    "👻 藤商事系": [
+        "禁書目録", "インデックス", "リング", "地獄少女", "フェアリーテイル", 
+        "アリア", "ゴブリンスレイヤー", "超電磁砲", "レールガン"
+    ],
+    "🌺 パイオニア": [
+        "ハナハナ", "オアシス", "シオサイ"
+    ],
+    "🐉 コナミ (KPE)": [
+        "マジカルハロウィン", "マジハロ", "ボンバーガール", "戦国コレクション", 
+        "戦コレ", "G1優駿", "防空少女", "サイレントヒル"
+    ],
+    "🍑 ネット/カルミナ": [
+        "チバリヨ", "十字架", "シンデレラブレイド", "スナイパイ", 
+        "賞金首", "ミルキィホームズ", "プリズムナナ"
+    ],
+    "🐈 オーイズミ": [
+        "ひぐらし", "オーバーロード", "1000ちゃん", "閃乱カグラ"
+    ],
+    "🔔 その他/バラエティ": [
+        "ビンゴ", "ジャックポット", "ウルトラマン", "ワンパンマン", "リコリス"
+    ]
+}
+
+def detect_maker(model_name):
+    """機種名からメーカー/グループを判定する"""
+    for maker, keywords in MAKER_DICT.items():
+        for kw in keywords:
+            if kw in model_name:
+                return maker
+    return "その他"
+
 st.markdown("""
     <style>
         .main .block-container {
@@ -132,6 +201,10 @@ def load_and_process_data(folder_path):
     df['曜日'] = df['日付'].dt.dayofweek.apply(lambda x: week_chars[x])
     df['週'] = (df['日付'].dt.day - 1) // 7 + 1
     df['REG確率'] = df.apply(lambda x: x['G数']/x['RB'] if x['RB'] > 0 else 9999, axis=1)
+    
+    # メーカー判定
+    df['メーカー'] = df['機種'].apply(detect_maker)
+    
     df = df.sort_values(['台番', '日付'])
     df['前日差枚'] = df.groupby('台番', observed=False)['差枚'].shift(1)
     df['前日G数'] = df.groupby('台番', observed=False)['G数'].shift(1)
@@ -146,7 +219,6 @@ st.sidebar.title("🎰 スロット攻略 Pro")
 store_names = list(logic.STORE_CONFIG.keys())
 selected_store = st.sidebar.selectbox("🏟️ 店舗を選択", store_names)
 store_info = logic.STORE_CONFIG[selected_store]
-# ▼ 【追加】ここにイベント情報を表示するようにしました
 st.sidebar.info(f"📅 {store_info.get('event_text', '情報なし')}")
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -176,7 +248,6 @@ if not df_all_raw.empty:
         custom_days_str = st.text_input("特定日", placeholder="例: 9, 19, 29")
         selected_weekdays = st.multiselect("曜日", ["月", "火", "水", "木", "金", "土", "日"], default=[])
         selected_weeks = st.multiselect("週 (第n週)", [1, 2, 3, 4, 5], default=[])
-        # ▼ 【追加】月日ゾロ目フィルター
         is_doublet = st.checkbox("月日ゾロ目 (1/1, 2/2...)")
 
     df_filtered = df_period.copy()
@@ -189,7 +260,6 @@ if not df_all_raw.empty:
     if selected_weekdays: df_filtered = df_filtered[df_filtered['曜日'].isin(selected_weekdays)]; filter_info.append(f"曜日: {selected_weekdays}")
     if selected_weeks: df_filtered = df_filtered[df_filtered['週'].isin(selected_weeks)]; filter_info.append(f"週: 第{selected_weeks}")
     
-    # ▼ 【追加】月日ゾロ目フィルターロジック
     if is_doublet:
         df_filtered = df_filtered[df_filtered['日付'].dt.month == df_filtered['日付'].dt.day]
         filter_info.append("月日ゾロ目")
@@ -267,7 +337,7 @@ if df_all.empty:
 
 if filter_info: st.info(f"⚡ フィルター: {' / '.join(filter_info)}")
 
-tab1, tab2, tab3, tab4 = st.tabs(["📅 日別レポート", "🔥 店長推し分析 (機種)", "🕵️‍♀️ 不発・並び発掘", "🔍 鉄板台サーチ＆多角分析"])
+tab1, tab2, tab3, tab4 = st.tabs(["📅 日別レポート", "🔥 店長推し分析 (機種)", "🕵️‍♀️ 不発・並び発掘", "🔍 鉄板台サーチ"])
 
 with tab1:
     st.subheader("📅 日別サマリー (3ヶ月一覧)")
@@ -394,21 +464,16 @@ with tab2:
             合計差枚=('差枚', 'sum')
         ).reset_index()
         
-        # サンプル数5以上の機種に絞る（ノイズ除去）
         valid = stats[stats['サンプル数'] >= 5].copy()
         
         if not valid.empty:
-            # --- スマホ用調整エリア ---
             c_view1, c_view2 = st.columns(2)
-            # 文字が邪魔なときはオフにできるようにする
             show_labels = c_view1.toggle("機種名を表示", value=True)
-            # プラスの台だけ見たいとき用
             show_only_plus = c_view2.toggle("プラス機種のみ", value=False)
             
             if show_only_plus:
                 valid = valid[valid['平均差枚'] > 0]
 
-            # バブルチャート作成
             fig = px.scatter(
                 valid, 
                 x="勝率", 
@@ -416,29 +481,26 @@ with tab2:
                 size="平均G数", 
                 color="合計差枚", 
                 hover_name="機種", 
-                text="機種" if show_labels else None, # スイッチで切り替え
+                text="機種" if show_labels else None, 
                 color_continuous_scale=['blue', 'white', 'red'], 
-                range_color=[-30000, 30000], # 色の範囲を固定して見やすく
-                size_max=60 # バブルを少し大きく
+                range_color=[-30000, 30000], 
+                size_max=60
             )
             
-            # グラフのレイアウト調整（ここがスマホ対策の肝）
             fig.update_layout(
-                height=550, # スマホ用に縦長にする
-                font=dict(size=14), # 全体の文字を大きく
+                height=550, 
+                font=dict(size=14), 
                 xaxis=dict(title="勝率 (%)", title_font=dict(size=16), tickfont=dict(size=14)),
                 yaxis=dict(title="平均差枚 (枚)", title_font=dict(size=16), tickfont=dict(size=14)),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(l=20, r=20, t=40, b=20) # 余白を調整
+                margin=dict(l=20, r=20, t=40, b=20) 
             )
             
-            # 文字の位置調整（重なりにくいように上側に）
             if show_labels:
                 fig.update_traces(textposition='top center')
 
             st.plotly_chart(fig, use_container_width=True)
             
-            # スマホだと表の方が見やすい場合もあるので、下に見やすく配置
             st.markdown("##### 📋 ランキングデータ")
             st.dataframe(
                 valid[['機種', '勝率', '平均差枚', '平均G数', 'サンプル数']]
