@@ -22,7 +22,7 @@ st.set_page_config(page_title="Slot Master Pro", layout="wide", page_icon="🎰"
 
 MEMO_FILE = "daily_memos.json"
 
-# ▼ 【2025年12月版】メーカー・グループ辞書 (最新台対応)
+# ▼ 【2025年12月版】メーカー・グループ辞書
 MAKER_DICT = {
     "🤡 北電子 (ジャグラー)": [
         "ジャグラー", "マイジャグ", "ファンキー", "ハッピー", "アイム", "ゴージャグ", 
@@ -83,51 +83,53 @@ MAKER_DICT = {
     ]
 }
 
+# ▼ がりぞう流：ブドウ逆算用の機種スペック定数 (6号機ジャグラー系)
+GRAPE_SPECS = {
+    "マイジャグ":     {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
+    "ファンキー":     {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
+    "アイム":         {"bb_net": 252, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 33.0, "cherry_pay": 2},
+    "ハッピー":       {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
+    "ゴージャグ":     {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 33.0, "cherry_pay": 2},
+    "ミスター":       {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
+    "ガールズ":       {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
+}
+
 def detect_maker(model_name):
-    """機種名からメーカー/グループを判定する"""
     for maker, keywords in MAKER_DICT.items():
         for kw in keywords:
             if kw in model_name:
                 return maker
     return "その他"
 
+def calc_grape_prob(row):
+    spec = None
+    for k, v in GRAPE_SPECS.items():
+        if k in row['機種']:
+            spec = v
+            break
+    if spec and row['G数'] > 500:
+        est_cherry = row['G数'] / spec['cherry_prob']
+        est_replay = row['G数'] / spec['replay_prob']
+        cherry_net_coin = spec['cherry_pay'] - 3
+        numerator = (
+            row['差枚'] 
+            - (row['BB'] * spec['bb_net']) 
+            - (row['RB'] * spec['rb_net']) 
+            - (est_cherry * cherry_net_coin)
+            - (est_replay * 0)
+            + (row['G数'] * 3)
+        )
+        est_grape_count = numerator / spec['grape_pay']
+        if est_grape_count > 0:
+            prob = row['G数'] / est_grape_count
+            if 4.0 <= prob <= 8.0:
+                return prob
+    return 0.0
+
 st.markdown("""
     <style>
-        .main .block-container {
-            max-width: 100% !important;
-            padding: 1rem 1rem 3rem 1rem !important;
-        }
-        div[data-testid="stDataFrame"] div[role="gridcell"] {
-            white-space: pre-wrap !important;
-            line-height: 1.5 !important;
-            display: flex;
-            align-items: center;
-        }
-        .metric-card {
-            background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px;
-            padding: 15px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 10px;
-        }
-        .metric-label { font-size: 0.85rem; color: #6c757d; margin-bottom: 5px; }
-        .metric-value { font-size: 1.4rem; font-weight: 700; color: #343a40; }
-        .val-pos { color: #dc3545 !important; } .val-neg { color: #28a745 !important; } 
-        .minrepo-row {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 10px 15px; margin-bottom: 8px; background-color: #fff;
-            border: 1px solid #ddd; border-left: 5px solid #ccc; border-radius: 4px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.2s;
-        }
-        .minrepo-row:hover { box-shadow: 0 4px 8px rgba(0,0,0,0.1); transform: translateY(-1px); }
-        .mr-date { flex: 2; font-weight: bold; font-size: 1.1em; }
-        .mr-total { flex: 1.5; text-align: right; font-weight: bold; color: #555; }
-        .mr-avg { flex: 1.5; text-align: right; font-weight: bold; }
-        .mr-g { flex: 1.5; text-align: right; font-size: 0.95em; color: #666; }
-        .mr-win { flex: 1.5; text-align: right; font-size: 0.95em; color: #666; }
-        .mr-memo { flex: 0.5; text-align: center; font-size: 1.2em; }
-        .border-pos { border-left-color: #dc3545 !important; background-color: #fff5f5 !important; }
-        .border-neg { border-left-color: #6c757d !important; }
-        .recommend-box { border: 2px solid #ffc107; background-color: #fffbf2; padding: 15px; border-radius: 10px; margin-bottom: 20px; }
-        .analysis-box { background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 8px; padding: 15px; margin-top: 20px; }
-        .pagination-box { text-align: center; padding: 10px; background: #f0f2f6; border-radius: 10px; margin-bottom: 20px; }
+        .main .block-container { max-width: 100% !important; padding: 1rem 1rem 3rem 1rem !important; }
+        div[data-testid="stDataFrame"] div[role="gridcell"] { white-space: pre-wrap !important; line-height: 1.5 !important; display: flex; align-items: center; }
         .custom-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .custom-table th { background-color: #f8f9fa; padding: 12px 8px; text-align: center; border: 1px solid #dee2e6; font-weight: bold; color: #495057; }
         .custom-table td { padding: 12px 10px; border: 1px solid #dee2e6; vertical-align: top; background-color: #fff; line-height: 1.6; color: #333; }
@@ -135,20 +137,20 @@ st.markdown("""
         .td-total  { width: 10%; text-align: right; font-weight: bold; font-size: 15px; color: #333; }
         .td-avg    { width: 8%; text-align: right; font-weight: bold; color: #333; }
         .td-g      { width: 10%; text-align: right; color: #666; font-size: 13px; }
-        .td-models { width: 60%; text-align: left; font-size: 13px; color: #333; }
+        .td-end    { width: 12%; text-align: center; font-weight: bold; color: #d63384; } 
+        .td-models { width: 48%; text-align: left; font-size: 13px; color: #333; }
         .val-plus { color: #d32f2f !important; }
         .val-minus { color: #333 !important; }
-        .model-line { display: inline-block; margin-right: 12px; margin-bottom: 4px; }
+        .model-line { display: block; margin-bottom: 4px; border-bottom: 1px dashed #eee; padding-bottom: 2px; }
         .memo-item { display: block; color: #0d6efd; font-weight: bold; margin-bottom: 6px; background-color: #e7f1ff; padding: 4px 8px; border-radius: 4px; }
         .icon-star { color: #ff9800; font-weight: bold; font-size: 1.1em; } 
         .icon-double { color: #e91e63; font-weight: bold; font-size: 1.1em; } 
         .icon-circle { color: #4caf50; font-weight: bold; } 
         .icon-spin { color: #6610f2; font-weight: bold; font-size: 1.1em; }
+        .analysis-box { background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 8px; padding: 15px; margin-top: 20px; }
+        .pagination-box { text-align: center; padding: 10px; background: #f0f2f6; border-radius: 10px; margin-bottom: 20px; }
     </style>
 """, unsafe_allow_html=True)
-
-UNLUCKY_ATYPE_COND = {"min_games": 5000, "max_diff": -500, "min_reg_prob": 350}
-UNLUCKY_AT_COND = {"min_games": 7500, "max_diff": -1000}
 
 def load_memos():
     if os.path.exists(MEMO_FILE):
@@ -201,10 +203,8 @@ def load_and_process_data(folder_path):
     df['曜日'] = df['日付'].dt.dayofweek.apply(lambda x: week_chars[x])
     df['週'] = (df['日付'].dt.day - 1) // 7 + 1
     df['REG確率'] = df.apply(lambda x: x['G数']/x['RB'] if x['RB'] > 0 else 9999, axis=1)
-    
-    # メーカー判定
     df['メーカー'] = df['機種'].apply(detect_maker)
-    
+    df['末尾'] = df['台番'].astype(str).str[-1]
     df = df.sort_values(['台番', '日付'])
     df['前日差枚'] = df.groupby('台番', observed=False)['差枚'].shift(1)
     df['前日G数'] = df.groupby('台番', observed=False)['G数'].shift(1)
@@ -215,7 +215,6 @@ def load_and_process_data(folder_path):
 # サイドバー
 # ==========================================
 st.sidebar.title("🎰 スロット攻略 Pro")
-
 store_names = list(logic.STORE_CONFIG.keys())
 selected_store = st.sidebar.selectbox("🏟️ 店舗を選択", store_names)
 store_info = logic.STORE_CONFIG[selected_store]
@@ -259,7 +258,6 @@ if not df_all_raw.empty:
         except: pass
     if selected_weekdays: df_filtered = df_filtered[df_filtered['曜日'].isin(selected_weekdays)]; filter_info.append(f"曜日: {selected_weekdays}")
     if selected_weeks: df_filtered = df_filtered[df_filtered['週'].isin(selected_weeks)]; filter_info.append(f"週: 第{selected_weeks}")
-    
     if is_doublet:
         df_filtered = df_filtered[df_filtered['日付'].dt.month == df_filtered['日付'].dt.day]
         filter_info.append("月日ゾロ目")
@@ -274,21 +272,15 @@ else:
 with st.sidebar.expander("🛠 データの更新・収集", expanded=False):
     now = datetime.now()
     is_safe_time = (now.hour == 8) or (now.hour == 9)
-    # is_safe_time = True 
-    
     st.write(f"**{selected_store}** のデータを取得します。")
-    
-    if is_safe_time:
-        st.success("✅ 現在はデータ収集可能です (8:00〜9:59)")
-    else:
-        st.error("⛔ 時間外のため機能ロック中 (8:00〜9:59 のみ可能)")
+    if is_safe_time: st.success("✅ 現在はデータ収集可能です (8:00〜9:59)")
+    else: st.error("⛔ 時間外のため機能ロック中 (8:00〜9:59 のみ可能)")
     
     today = datetime.now().date()
     date_range_scrape = st.date_input("取得範囲", value=(today - timedelta(days=7), today - timedelta(days=1)), max_value=today, key="scrape_date")
     max_workers = st.slider("並列スレッド数", 1, 5, 2)
     
     col_b1, col_b2 = st.columns(2)
-    
     if st.button(f"この店舗のみ", type="secondary", disabled=not is_safe_time): 
         if isinstance(date_range_scrape, tuple) and len(date_range_scrape) == 2:
             with st.spinner(f"{selected_store} を収集中..."):
@@ -300,25 +292,18 @@ with st.sidebar.expander("🛠 データの更新・収集", expanded=False):
         if isinstance(date_range_scrape, tuple) and len(date_range_scrape) == 2:
             s_date, e_date = date_range_scrape
             total_stores = len(store_names)
-            
             progress_bar_all = st.progress(0)
             status_text_all = st.empty()
-            
             for i, target_store in enumerate(store_names):
                 if not logic.is_safe_scrape_time():
-                    st.error("⏰ 時間オーバーのため中断しました")
-                    break
-
+                    st.error("⏰ 時間オーバーのため中断しました"); break
                 status_text_all.write(f"⏳ [{i+1}/{total_stores}] **{target_store}** のデータを収集中...")
                 try:
                     logic.run_scraping(target_store, s_date, e_date, max_workers)
                     st.toast(f"✅ {target_store} 完了")
-                except Exception as e:
-                    st.error(f"❌ {target_store} エラー: {e}")
-                
+                except Exception as e: st.error(f"❌ {target_store} エラー: {e}")
                 progress_bar_all.progress((i + 1) / total_stores)
                 time.sleep(1.5)
-            
             status_text_all.success("🎉 全店舗の収集が完了しました！")
             time.sleep(2)
             st.cache_data.clear()
@@ -350,50 +335,55 @@ with tab1:
             date_key_edit = target_date.strftime('%Y-%m-%d')
             memo_key = f"{selected_store}_{date_key_edit}"
             current_memo = memos.get(memo_key, "")
-            
             c_memo_in, c_memo_btn = st.columns([4, 1])
-            with c_memo_in:
-                new_memo_val = st.text_input("メモ内容", value=current_memo, placeholder="例: イベント日、全台系あり", label_visibility="collapsed")
+            with c_memo_in: new_memo_val = st.text_input("メモ内容", value=current_memo, placeholder="例: イベント日、全台系あり", label_visibility="collapsed")
             with c_memo_btn:
                 if st.button("保存", type="primary", key="save_memo_btn"):
                     save_memo(date_key_edit, new_memo_val, selected_store)
                     st.toast(f"{date_key_edit} のメモを保存しました")
-                    time.sleep(1)
-                    st.rerun()
-        else:
-            st.info("データがありません")
+                    time.sleep(1); st.rerun()
+        else: st.info("データがありません")
 
-    with st.expander("📂 その日の全台データを見る (機種絞り込み)", expanded=False):
+    with st.expander("📂 その日の全台データを見る (機種・末尾分析)", expanded=False):
         if len(sorted_dates) > 0:
             c_date, c_model = st.columns([1, 2])
-            with c_date:
-                view_date = st.selectbox("日付", sorted_dates, key="raw_data_date_selector")
-            
+            with c_date: view_date = st.selectbox("日付", sorted_dates, key="raw_data_date_selector")
             raw_df_day = df_all[df_all['日付'] == view_date].copy()
+            
+            st.markdown("##### 🔢 末尾別 平均差枚数")
+            end_stats_graph = raw_df_day.groupby('末尾').agg(平均差枚=('差枚', 'mean')).reset_index()
+            fig_end = px.bar(end_stats_graph, x='末尾', y='平均差枚', color='平均差枚', color_continuous_scale='Bluered_r')
+            st.plotly_chart(fig_end, use_container_width=True)
+            
             def calc_prob_safe(g, c): return round(g / c, 1) if c > 0 else 9999.0
             raw_df_day['BIG確率'] = raw_df_day.apply(lambda x: calc_prob_safe(x['G数'], x['BB']), axis=1)
             raw_df_day['合算確率'] = raw_df_day.apply(lambda x: calc_prob_safe(x['G数'], x['BB'] + x['RB']), axis=1)
             
             all_models = sorted(raw_df_day['機種'].unique())
-            with c_model:
-                selected_models = st.multiselect("機種で絞り込み", all_models, placeholder="機種を選択 (未選択で全表示)")
-            
+            with c_model: selected_models = st.multiselect("機種で絞り込み", all_models, placeholder="機種を選択 (未選択で全表示)")
             if selected_models: raw_df_day = raw_df_day[raw_df_day['機種'].isin(selected_models)]
-            final_df = raw_df_day[['機種', '台番', '差枚', 'G数', 'BB', 'RB', '合成', 'BIG確率', 'REG確率', '合算確率']].sort_values('差枚', ascending=False)
+            
+            final_df = raw_df_day[['機種', '台番', '末尾', '差枚', 'G数', 'BB', 'RB', '合成', 'BIG確率', 'REG確率', '合算確率']].sort_values('差枚', ascending=False)
             st.dataframe(final_df.style.format({'G数': '{:,}', 'BIG確率': '1/{:.1f}', 'REG確率': '1/{:.1f}', '合算確率': '1/{:.1f}'}), column_config={"差枚": st.column_config.NumberColumn("差枚", format="%+d"), "機種": st.column_config.TextColumn("機種名", width="medium")}, height=400, use_container_width=True)
-            total_diff = int(final_df['差枚'].sum())
-            st.caption(f"📊 表示中の合計: {len(final_df)}台 / 総差枚: {total_diff:+d}枚")
-        else:
-            st.info("データがありません")
+            total_diff = int(final_df['差枚'].sum()); st.caption(f"📊 表示中の合計: {len(final_df)}台 / 総差枚: {total_diff:+d}枚")
+        else: st.info("データがありません")
 
     with st.expander("ℹ️ アイコンの意味・判定ルール (クリックで開閉)", expanded=True):
         st.markdown("""
-        <div style="font-size: 0.9rem; line-height: 1.8;">
-            <b>★ 全勝/鉄板</b>: 勝率 100% かつ 平均G数 7,000G以上<br>
-            <b>◎ 絶好調</b>: 勝率 66%以上 かつ 差枚+1,500枚 かつ 平均G数 7,000G以上<br>
-            <b>🌀 ぶん回し</b>: 機種平均 7,000G以上<br>
-            <b>○ 好調</b>: 勝率 50%以上 かつ 勝ち台平均 7,000G以上<br>
-        </div>""", unsafe_allow_html=True)
+        #### 🔥 強末尾
+        以下の3つの条件をすべて満たす優秀な末尾です。
+        * **勝率**: 50%以上
+        * **勝利台平均G数**: 4,000回転以上
+        * **全体平均差枚**: プラス
+        
+        ---
+        
+        #### その他のアイコン
+        * **★ 全勝/鉄板**: 勝率 100% かつ 平均G数 7,000G以上
+        * **◎ 絶好調**: 勝率 66%以上 かつ 差枚+1,500枚 かつ 平均G数 7,000G以上
+        * **🌀 ぶん回し**: 機種平均 7,000G以上
+        * **○ 好調**: 勝率 50%以上 かつ 勝ち台平均 7,000G以上
+        """, unsafe_allow_html=True)
     
     st.markdown("---")
     ITEMS_PER_PAGE = 90
@@ -406,7 +396,7 @@ with tab1:
     else: current_page = 1
     
     display_dates = sorted_dates[(current_page - 1) * ITEMS_PER_PAGE : current_page * ITEMS_PER_PAGE]
-    table_headers = '<thead><tr><th class="td-date">日付</th><th class="td-total">総差枚</th><th class="td-avg">平均</th><th class="td-g">平均G</th><th class="td-models">主力機種・メモ</th></tr></thead>'
+    table_headers = '<thead><tr><th class="td-date">日付</th><th class="td-total">総差枚</th><th class="td-avg">平均</th><th class="td-g">平均G</th><th class="td-end">強末尾</th><th class="td-models">主力機種・メモ</th></tr></thead>'
     table_rows = ''
 
     for date_val in display_dates:
@@ -422,6 +412,21 @@ with tab1:
         total_cls = "val-plus" if total_diff > 0 else "val-minus"
         avg_cls = "val-plus" if avg_diff > 0 else "val-minus"
         
+        end_stats_all = df_day.groupby('末尾', observed=False).agg(平均差枚=('差枚', 'mean'), 勝率=('差枚', lambda x: (x > 0).mean())).reset_index()
+        df_day_win = df_day[df_day['差枚'] > 0]
+        if not df_day_win.empty:
+            end_stats_win = df_day_win.groupby('末尾', observed=False).agg(勝利台平均G数=('G数', 'mean'), 勝利台平均差枚=('差枚', 'mean')).reset_index()
+        else:
+            end_stats_win = pd.DataFrame(columns=['末尾', '勝利台平均G数', '勝利台平均差枚'])
+        
+        end_stats = pd.merge(end_stats_all, end_stats_win, on='末尾', how='left').fillna(0)
+        strong_ends = end_stats[(end_stats['勝率'] >= 0.5) & (end_stats['勝利台平均G数'] >= 4000) & (end_stats['平均差枚'] > 0)].sort_values('平均差枚', ascending=False)
+
+        if not strong_ends.empty:
+            best_end = strong_ends.iloc[0]
+            end_html = f"🔢{best_end['末尾']} <br><span style='font-size:0.8rem; color:#d63384;'>全{int(best_end['平均差枚']):+}/勝{int(best_end['勝利台平均差枚']):+}</span>"
+        else: end_html = "-"
+
         win_machines = df_day[df_day['差枚'] > 0]
         win_g_means = win_machines.groupby('機種')['G数'].mean() if not win_machines.empty else pd.Series(dtype=float)
         model_stats = df_day.groupby('機種', observed=False).agg(平均差枚=('差枚', 'mean'), 勝率=('差枚', lambda x: (x > 0).mean()), 平均G数=('G数', 'mean'), 台数=('台番', 'count')).reset_index()
@@ -442,81 +447,32 @@ with tab1:
             elif row['平均G数'] >= 7000: icon = "<span class='icon-spin'>🌀</span>"
             if not icon and row['勝率'] >= 0.5 and win_avg_g >= 7000: icon = "<span class='icon-circle'>○</span>"
             if icon and m_name not in displayed_models:
-                models_html_parts.append(f"<span class='model-line'>{icon} {m_name}({int(row['平均差枚']):+})</span>")
-                displayed_models.add(m_name)
+                models_html_parts.append(f"<span class='model-line'>{icon} {m_name}({int(row['平均差枚']):+})</span>"); displayed_models.add(m_name)
 
         models_html = "".join(models_html_parts) if models_html_parts else "-"
-        table_rows += f'<tr><td class="td-date">{date_str}</td><td class="td-total {total_cls}">{total_diff:+,}</td><td class="td-avg {avg_cls}">{avg_diff:+,}</td><td class="td-g">{avg_g:,}</td><td class="td-models">{models_html}</td></tr>'
+        table_rows += f'<tr><td class="td-date">{date_str}</td><td class="td-total {total_cls}">{total_diff:+,}</td><td class="td-avg {avg_cls}">{avg_diff:+,}</td><td class="td-g">{avg_g:,}</td><td class="td-end">{end_html}</td><td class="td-models">{models_html}</td></tr>'
 
     if len(display_dates) > 0: st.markdown(f'<table class="custom-table">{table_headers}<tbody>{table_rows}</tbody></table>', unsafe_allow_html=True)
     else: st.info("表示できるデータがありません")
 
 with tab2:
     st.subheader("🔥 店長推し分析 (機種別)")
-    
     if not df_all.empty:
-        # データ集計
-        stats = df_all.groupby('機種', observed=False).agg(
-            平均差枚=('差枚', 'mean'), 
-            勝率=('差枚', lambda x: (x>0).mean()*100), 
-            平均G数=('G数', 'mean'), 
-            サンプル数=('台番', 'count'), 
-            合計差枚=('差枚', 'sum')
-        ).reset_index()
-        
+        stats = df_all.groupby('機種', observed=False).agg(平均差枚=('差枚', 'mean'), 勝率=('差枚', lambda x: (x>0).mean()*100), 平均G数=('G数', 'mean'), サンプル数=('台番', 'count'), 合計差枚=('差枚', 'sum')).reset_index()
         valid = stats[stats['サンプル数'] >= 5].copy()
-        
         if not valid.empty:
             c_view1, c_view2 = st.columns(2)
             show_labels = c_view1.toggle("機種名を表示", value=True)
             show_only_plus = c_view2.toggle("プラス機種のみ", value=False)
-            
-            if show_only_plus:
-                valid = valid[valid['平均差枚'] > 0]
-
-            fig = px.scatter(
-                valid, 
-                x="勝率", 
-                y="平均差枚", 
-                size="平均G数", 
-                color="合計差枚", 
-                hover_name="機種", 
-                text="機種" if show_labels else None, 
-                color_continuous_scale=['blue', 'white', 'red'], 
-                range_color=[-30000, 30000], 
-                size_max=60
-            )
-            
-            fig.update_layout(
-                height=550, 
-                font=dict(size=14), 
-                xaxis=dict(title="勝率 (%)", title_font=dict(size=16), tickfont=dict(size=14)),
-                yaxis=dict(title="平均差枚 (枚)", title_font=dict(size=16), tickfont=dict(size=14)),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(l=20, r=20, t=40, b=20) 
-            )
-            
-            if show_labels:
-                fig.update_traces(textposition='top center')
-
+            if show_only_plus: valid = valid[valid['平均差枚'] > 0]
+            fig = px.scatter(valid, x="勝率", y="平均差枚", size="平均G数", color="合計差枚", hover_name="機種", text="機種" if show_labels else None, color_continuous_scale=['blue', 'white', 'red'], range_color=[-30000, 30000], size_max=60)
+            fig.update_layout(height=550, font=dict(size=14), xaxis=dict(title="勝率 (%)", title_font=dict(size=16), tickfont=dict(size=14)), yaxis=dict(title="平均差枚 (枚)", title_font=dict(size=16), tickfont=dict(size=14)), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), margin=dict(l=20, r=20, t=40, b=20))
+            if show_labels: fig.update_traces(textposition='top center')
             st.plotly_chart(fig, use_container_width=True)
-            
             st.markdown("##### 📋 ランキングデータ")
-            st.dataframe(
-                valid[['機種', '勝率', '平均差枚', '平均G数', 'サンプル数']]
-                .sort_values('平均差枚', ascending=False)
-                .style.format({
-                    '勝率': '{:.1f}%', 
-                    '平均差枚': '{:+.0f}枚', 
-                    '平均G数': '{:,.0f}G'
-                }),
-                use_container_width=True,
-                height=300
-            )
-        else:
-            st.warning("集計に必要なデータ数が足りません（サンプル数5以上）")
-    else:
-        st.info("データがありません")
+            st.dataframe(valid[['機種', '勝率', '平均差枚', '平均G数', 'サンプル数']].sort_values('平均差枚', ascending=False).style.format({'勝率': '{:.1f}%', '平均差枚': '{:+.0f}枚', '平均G数': '{:,.0f}G'}), use_container_width=True, height=300)
+        else: st.warning("集計に必要なデータ数が足りません（サンプル数5以上）")
+    else: st.info("データがありません")
 
 with tab3:
     st.subheader("🕵️‍♀️ 不発・塊検知")
@@ -534,13 +490,17 @@ with tab3:
             for i, r in found.iterrows(): st.table(day_df[(day_df['台番'] >= r['台番']-1) & (day_df['台番'] <= r['台番']+1)][['機種', '台番', '差枚', 'G数']])
 
 with tab4:
-    st.header("🔍 鉄板台サーチ＆多角分析")
+    st.header("🔍 鉄板台サーチ & 🍇推定ブドウ逆算")
     target_src = st.radio("データソース", ["現在選択中の期間 (サイドバー)", "全期間 (読込済データ)"], horizontal=True)
     base_df = df_all_raw.copy() if "全期間" in target_src else df_all.copy()
+    
     def calc_p(g, c): return round(g/c, 1) if c>0 else 9999.0
     base_df['BIG確率'] = base_df.apply(lambda x: calc_p(x['G数'], x['BB']), axis=1)
     base_df['REG確率'] = base_df.apply(lambda x: calc_p(x['G数'], x['RB']), axis=1)
     base_df['合算確率'] = base_df.apply(lambda x: calc_p(x['G数'], x['BB']+x['RB']), axis=1)
+    
+    base_df['🍇推定ブドウ'] = base_df.apply(calc_grape_prob, axis=1)
+    base_df['🍇確率'] = base_df['🍇推定ブドウ'].apply(lambda x: f"1/{x:.1f}" if x > 0 else "-")
 
     c1, c2 = st.columns(2)
     min_g = int(c1.selectbox("回転数以上", [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000], index=2))
@@ -575,7 +535,22 @@ with tab4:
         st.markdown("##### 📋 エース台番リスト")
         st.dataframe(stats.head(20).style.format({'平均差枚':'{:.0f}'}), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        st.subheader("📝 抽出データ全リスト")
-        st.dataframe(res[['日付','機種','台番','差枚','G数','合算確率','BIG確率','REG確率']].sort_values('差枚', ascending=False).style.format({'日付':'{:%Y-%m-%d}','差枚':'{:+d}'}), use_container_width=True)
+        st.subheader("📝 抽出データ全リスト (ブドウ逆算付き)")
+        
+        display_cols = ['日付','機種','台番','🍇確率','差枚','G数','合算確率','BIG確率','REG確率']
+        
+        # ▼ ここで確率の表示フォーマットを指定 (小数点第1位まで)
+        st.dataframe(
+            res[display_cols].sort_values('差枚', ascending=False)
+            .style.format({
+                '日付': '{:%Y-%m-%d}',
+                '差枚': '{:+d}',
+                'BIG確率': '1/{:.1f}',
+                'REG確率': '1/{:.1f}',
+                '合算確率': '1/{:.1f}'
+            })
+            .applymap(lambda x: 'background-color: #ffcccc' if '1/5.' in str(x) else '', subset=['🍇確率']),
+            use_container_width=True
+        )
     else:
         st.warning("条件に合う台はありません")
