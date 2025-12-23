@@ -3,25 +3,25 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 import numpy as np
+import glob
 import os
 import re
 import json
+import csv
 import time
-import sqlite3
 from datetime import datetime, timedelta
 
 import logic
-# データ量制限の緩和
-pd.set_option("styler.render.max_elements", 1000000)
 
 # ==========================================
 # 設定・定数エリア
 # ==========================================
 st.set_page_config(page_title="Slot Master Pro", layout="wide", page_icon="🎰")
+pd.set_option("styler.render.max_elements", 1000000)
 
 MEMO_FILE = "daily_memos.json"
-DB_FILE = "slot_data.db"
 
+# ▼ 【2025年12月版】メーカー・グループ辞書
 MAKER_DICT = {
     "🤡 北電子 (ジャグラー)": ["ジャグラー", "マイジャグ", "ファンキー", "ハッピー", "アイム", "ゴージャグ", "ミスター", "ガールズ", "ダンまち", "グランベルム"],
     "👽 Sammy系": ["北斗", "カバネリ", "防振り", "エウレカ", "ゴールデンカムイ", "コードギアス", "幼女戦記", "頭文字D", "傷物語", "バイオハザード RE:2", "ディスクアップ", "ガメラ", "アラジン", "ファイヤードリフト", "東京リベンジャーズ", "A-SLOT", "鬼武者3"],
@@ -39,6 +39,7 @@ MAKER_DICT = {
     "🔔 その他": ["ビンゴ", "ジャックポット", "ウルトラマン", "ワンパンマン", "リコリス"]
 }
 
+# ▼ ブドウ逆算用の機種スペック定数
 GRAPE_SPECS = {
     "マイジャグ":     {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
     "ファンキー":     {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
@@ -72,6 +73,7 @@ def calc_grape_prob(row):
 st.markdown("""
     <style>
         .main .block-container { max-width: 100% !important; padding: 1rem 1rem 3rem 1rem !important; }
+        div[data-testid="stDataFrame"] div[role="gridcell"] { white-space: pre-wrap !important; line-height: 1.5 !important; display: flex; align-items: center; }
         .custom-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .custom-table th { background-color: #f8f9fa; padding: 12px 8px; text-align: center; border: 1px solid #dee2e6; font-weight: bold; color: #495057; }
         .custom-table td { padding: 12px 10px; border: 1px solid #dee2e6; vertical-align: top; background-color: #fff; line-height: 1.6; color: #333; }
@@ -109,54 +111,68 @@ def save_memo(date_str, text, store_name):
         json.dump(memos, f, ensure_ascii=False, indent=4)
 
 @st.cache_data
-def load_and_process_data(store_name, start_date=None, end_date=None):
-    if not os.path.exists(DB_FILE): return pd.DataFrame()
+def load_and_process_data(folder_path):
+    if not os.path.exists(folder_path): return pd.DataFrame()
+    all_files = glob.glob(os.path.join(folder_path, "*.csv"))
+    if not all_files: return pd.DataFrame()
+    df_list = []
+    for f in all_files:
+        try:
+            date_str = os.path.basename(f).replace(".csv", "")
+            temp_df = pd.read_csv(f, encoding='utf-8-sig')
+            temp_df['日付'] = pd.to_datetime(date_str)
+            df_list.append(temp_df)
+        except: continue
+    if not df_list: return pd.DataFrame()
+    df = pd.concat(df_list, ignore_index=True)
+    if not df.empty: df = df.drop_duplicates(subset=['日付', '台番'], keep='last')
     
-    conn = sqlite3.connect(DB_FILE)
-    query = "SELECT * FROM machine_data WHERE store_name = ?"
-    params = [store_name]
-    
-    if start_date and end_date:
-        query += " AND date BETWEEN ? AND ?"
-        params.extend([str(start_date), str(end_date)])
-        
-    try:
-        df = pd.read_sql(query, conn, params=params)
-    except:
-        return pd.DataFrame()
-    finally:
-        conn.close()
-        
-    if df.empty: return pd.DataFrame()
-
-    rename_map = {'machine_name':'機種', 'machine_num':'台番', 'diff_coins':'差枚', 
-                  'game_count':'G数', 'bb_count':'BB', 'rb_count':'RB', 'total_prob':'合成', 'date':'日付'}
-    df = df.rename(columns=rename_map)
-    df['日付'] = pd.to_datetime(df['日付'])
+    cols_to_num = ['台番', '差枚', 'G数', 'BB', 'RB', '合成']
+    df.columns = [str(c).strip().replace('\ufeff', '') for c in df.columns]
+    for col in cols_to_num:
+        if col in df.columns:
+            s_raw = df[col].astype(str).str.strip()
+            def safe_convert(val):
+                val_clean = val.replace(',', '').replace('+', '').replace(' ', '')
+                is_negative = False
+                if any(x in val_clean for x in ['▲', '▼', '－', '−', '‐', '-']): is_negative = True
+                num_only = re.sub(r'[^\d.]', '', val_clean)
+                if not num_only: return 0
+                try:
+                    number = int(float(num_only))
+                    return -number if is_negative else number
+                except: return 0
+            df[col] = s_raw.apply(safe_convert)
     
     week_chars = ['月', '火', '水', '木', '金', '土', '日']
     df['曜日'] = df['日付'].dt.dayofweek.apply(lambda x: week_chars[x])
     df['週'] = (df['日付'].dt.day - 1) // 7 + 1
     df['REG確率'] = df.apply(lambda x: x['G数']/x['RB'] if x['RB'] > 0 else 9999, axis=1)
-    df['BIG確率'] = df.apply(lambda x: x['G数']/x['BB'] if x['BB'] > 0 else 9999, axis=1)
-    df['合算確率'] = df.apply(lambda x: x['G数']/(x['BB']+x['RB']) if (x['BB']+x['RB']) > 0 else 9999, axis=1)
     df['メーカー'] = df['機種'].apply(detect_maker)
     df['末尾'] = df['台番'].astype(str).str[-1]
-    
     df = df.sort_values(['台番', '日付'])
+    df['前日差枚'] = df.groupby('台番', observed=False)['差枚'].shift(1)
+    df['前日G数'] = df.groupby('台番', observed=False)['G数'].shift(1)
+    df['Δ差枚'] = df['差枚'] - df['前日差枚']
     return df
 
 # ==========================================
-# サイドバー & メイン処理
+# サイドバー
 # ==========================================
-st.sidebar.title("🎰 Slot Master Pro")
+st.sidebar.title("🎰 スロット攻略 Pro")
 store_names = list(logic.STORE_CONFIG.keys())
 selected_store = st.sidebar.selectbox("🏟️ 店舗を選択", store_names)
 store_info = logic.STORE_CONFIG[selected_store]
 st.sidebar.info(f"📅 {store_info.get('event_text', '情報なし')}")
 
-today = datetime.now().date()
-df_all_raw = load_and_process_data(selected_store, today - timedelta(days=90), today)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# 公開用データフォルダ (public_data/店舗名) を想定
+data_folder = os.path.join(current_dir, "public_data", selected_store)
+# もし上記になければ、ルート直下の店舗名フォルダを探す
+if not os.path.exists(data_folder):
+    data_folder = os.path.join(current_dir, selected_store)
+
+df_all_raw = load_and_process_data(data_folder)
 
 st.sidebar.divider()
 st.sidebar.subheader("🔍 分析条件設定")
@@ -164,21 +180,18 @@ st.sidebar.subheader("🔍 分析条件設定")
 df_filtered = pd.DataFrame()
 
 if not df_all_raw.empty:
-    min_date = df_all_raw['日付'].min().date()
     max_date = df_all_raw['日付'].max().date()
-    
-    period_option = st.sidebar.selectbox("対象期間", ["直近1週間", "直近2週間", "直近1ヶ月", "直近3ヶ月", "カスタム指定", "全期間(読込分)"], index=3, label_visibility="collapsed")
-    
+    min_date = df_all_raw['日付'].min().date()
+    period_option = st.sidebar.selectbox("対象期間", ["全期間", "直近1週間", "直近2週間", "直近1ヶ月", "直近3ヶ月", "カスタム指定"], index=0, label_visibility="collapsed")
     start_dt, end_dt = min_date, max_date
     if period_option == "カスタム指定":
         custom_range = st.sidebar.date_input("日付範囲", value=(min_date, max_date), min_value=min_date, max_value=max_date)
         if isinstance(custom_range, tuple) and len(custom_range) == 2: start_dt, end_dt = custom_range
-    elif period_option != "全期間(読込分)":
+    elif period_option != "全期間":
         days_map = {"直近1週間":7, "直近2週間":14, "直近1ヶ月":30, "直近3ヶ月":90}
         days_back = days_map.get(period_option, 30)
         start_dt = max_date - timedelta(days=days_back - 1)
         end_dt = max_date
-        
     mask = (df_all_raw['日付'].dt.date >= start_dt) & (df_all_raw['日付'].dt.date <= end_dt)
     df_period = df_all_raw.loc[mask].copy()
 
@@ -201,38 +214,53 @@ if not df_all_raw.empty:
         df_filtered = df_filtered[df_filtered['日付'].dt.month == df_filtered['日付'].dt.day]
         filter_info.append("月日ゾロ目")
 
-    st.sidebar.divider()
-    st.sidebar.subheader("🤖 AI分析用データ出力")
-    if not df_filtered.empty:
-        ai_df = df_filtered.copy()
-        ai_df['結果'] = ai_df['差枚'].apply(lambda x: 'Win' if x>0 else 'Lose')
-        csv_data = ai_df.to_csv(index=False).encode('utf-8-sig')
-        fname = f"{selected_store}_{start_dt}_{end_dt}.csv"
-        st.sidebar.download_button("📥 分析用CSVをDL", csv_data, fname, "text/csv")
-    
     df_all = df_filtered.copy()
 else:
     df_all = pd.DataFrame()
 
 # ----------------------------------------------
-# 🛠 データの更新・収集
+# 🛠 データの更新・収集 (公開用では機能しないがUIとして残す)
 # ----------------------------------------------
 with st.sidebar.expander("🛠 データの更新・収集", expanded=False):
+    now = datetime.now()
+    is_safe_time = (now.hour == 8) or (now.hour == 9)
     st.write(f"**{selected_store}** のデータを取得します。")
-    is_ok = logic.is_safe_scrape_time()
+    if is_safe_time: st.success("✅ 現在はデータ収集可能です (8:00〜9:59)")
+    else: st.error("⛔ 時間外のため機能ロック中 (8:00〜9:59 のみ可能)")
     
-    if is_ok: st.success("✅ 収集中可能 (制限解除中)")
-    else: st.error("⛔ 時間外 (設定によりロック中)")
+    today = datetime.now().date()
+    date_range_scrape = st.date_input("取得範囲", value=(today - timedelta(days=7), today - timedelta(days=1)), max_value=today, key="scrape_date")
+    max_workers = st.slider("並列スレッド数", 1, 5, 2)
     
-    scrape_days = st.date_input("取得範囲", value=(today-timedelta(days=7), today-timedelta(days=1)), max_value=today, key="scrape_range")
-    workers = st.slider("並列数", 1, 5, 3)
-    
-    if st.button("データ収集開始", disabled=not is_ok):
-        if isinstance(scrape_days, tuple) and len(scrape_days)==2:
-            with st.spinner(f"{selected_store} を収集中..."):
-                logic.run_scraping(selected_store, scrape_days[0], scrape_days[1], workers)
-                st.cache_data.clear()
-                st.rerun()
+    col_b1, col_b2 = st.columns(2)
+    if st.button(f"この店舗のみ", type="secondary", disabled=not is_safe_time): 
+        if isinstance(date_range_scrape, tuple) and len(date_range_scrape) == 2:
+            st.warning("⚠️ 公開版ではスクレイピング機能は制限されています。管理者にご連絡ください。")
+
+    if st.button("🔄 全店舗まとめて収集", type="primary", disabled=not is_safe_time):
+        st.warning("⚠️ 公開版ではスクレイピング機能は制限されています。管理者にご連絡ください。")
+
+# ---------------------------------------------------------
+# ▼ AI分析用データ出力 (修正版)
+# ---------------------------------------------------------
+st.sidebar.divider()
+st.sidebar.subheader("🤖 AI分析用データ出力")
+
+if 'df_filtered' in locals() and not df_filtered.empty:
+    ai_export_df = df_filtered.copy()
+    if '差枚' in ai_export_df.columns:
+        ai_export_df['結果'] = ai_export_df['差枚'].apply(lambda x: 'Win' if x > 0 else 'Lose')
+    csv_data = ai_export_df.to_csv(index=False).encode('utf-8-sig')
+    f_name = f"{selected_store}_AI分析用.csv"
+    st.sidebar.download_button(
+        label="📥 AI分析用CSVをダウンロード",
+        data=csv_data,
+        file_name=f_name,
+        mime="text/csv",
+        help="このファイルをChatGPTやClaudeにアップロードして、傾向を聞いてみてください。"
+    )
+else:
+    st.sidebar.warning("データが表示されていません")
 
 st.sidebar.divider()
 
@@ -242,14 +270,13 @@ st.sidebar.divider()
 st.title(f"📊 {selected_store} 攻略分析")
 
 if df_all.empty:
-    st.warning("条件に合うデータがありません。")
+    st.warning("条件に合うデータがありません。サイドバーでデータを収集するか、期間を変更してください。")
     st.stop()
 
 if filter_info: st.info(f"⚡ フィルター: {' / '.join(filter_info)}")
 
 tab1, tab2, tab3, tab4 = st.tabs(["📅 日別レポート", "🔥 店長推し分析 (機種)", "🕵️‍♀️ 不発・並び発掘", "🔍 鉄板台サーチ"])
 
-# --- Tab 1 ---
 with tab1:
     st.subheader("📅 日別サマリー (3ヶ月一覧)")
     sorted_dates = sorted(df_all['日付'].unique(), reverse=True)
@@ -281,6 +308,10 @@ with tab1:
             fig_end = px.bar(end_stats_graph, x='末尾', y='平均差枚', color='平均差枚', color_continuous_scale='Bluered_r')
             st.plotly_chart(fig_end, width="stretch")
             
+            def calc_prob_safe(g, c): return round(g / c, 1) if c > 0 else 9999.0
+            raw_df_day['BIG確率'] = raw_df_day.apply(lambda x: calc_prob_safe(x['G数'], x['BB']), axis=1)
+            raw_df_day['合算確率'] = raw_df_day.apply(lambda x: calc_prob_safe(x['G数'], x['BB'] + x['RB']), axis=1)
+            
             all_models = sorted(raw_df_day['機種'].unique())
             with c_model: selected_models = st.multiselect("機種で絞り込み", all_models, placeholder="機種を選択 (未選択で全表示)")
             if selected_models: raw_df_day = raw_df_day[raw_df_day['機種'].isin(selected_models)]
@@ -308,9 +339,7 @@ with tab1:
         """, unsafe_allow_html=True)
     
     st.markdown("---")
-    
-    ITEMS_PER_PAGE = 60
-    
+    ITEMS_PER_PAGE = 90
     total_pages = max(1, -(-len(sorted_dates) // ITEMS_PER_PAGE)) 
     if total_pages > 1:
         st.markdown('<div class="pagination-box">', unsafe_allow_html=True)
@@ -336,6 +365,7 @@ with tab1:
         total_cls = "val-plus" if total_diff > 0 else "val-minus"
         avg_cls = "val-plus" if avg_diff > 0 else "val-minus"
         
+        # --- 末尾集計（台数・勝利数追加） ---
         end_stats_all = df_day.groupby('末尾', observed=False).agg(
             平均差枚=('差枚', 'mean'),
             勝率=('差枚', lambda x: (x > 0).mean()),
@@ -365,6 +395,7 @@ with tab1:
         win_machines = df_day[df_day['差枚'] > 0]
         win_g_means = win_machines.groupby('機種')['G数'].mean() if not win_machines.empty else pd.Series(dtype=float)
         
+        # --- 機種別集計（勝利台数追加） ---
         model_stats = df_day.groupby('機種', observed=False).agg(
             平均差枚=('差枚', 'mean'), 
             勝率=('差枚', lambda x: (x > 0).mean()),
@@ -399,7 +430,6 @@ with tab1:
     if len(display_dates) > 0: st.markdown(f'<table class="custom-table">{table_headers}<tbody>{table_rows}</tbody></table>', unsafe_allow_html=True)
     else: st.info("表示できるデータがありません")
 
-# --- Tab 2 ---
 with tab2:
     st.subheader("🔥 店長推し分析 (機種別)")
     if not df_all.empty:
@@ -419,7 +449,6 @@ with tab2:
         else: st.warning("集計に必要なデータ数が足りません（サンプル数5以上）")
     else: st.info("データがありません")
 
-# --- Tab 3 ---
 with tab3:
     st.subheader("🕵️‍♀️ 不発・塊検知")
     unlucky = df_all[(df_all['G数']>=5000) & (df_all['差枚']<=-500) & (df_all['REG確率']<=350)]
@@ -435,7 +464,6 @@ with tab3:
             st.success("🔥 並び候補発見")
             for i, r in found.iterrows(): st.table(day_df[(day_df['台番'] >= r['台番']-1) & (day_df['台番'] <= r['台番']+1)][['機種', '台番', '差枚', 'G数']])
 
-# --- Tab 4 ---
 with tab4:
     st.header("🔍 鉄板台サーチ & 🍇推定ブドウ逆算")
     target_src = st.radio("データソース", ["現在選択中の期間 (サイドバー)", "全期間 (読込済データ)"], horizontal=True)
@@ -486,7 +514,6 @@ with tab4:
         
         display_cols = ['日付','機種','台番','🍇確率','差枚','G数','合算確率','BIG確率','REG確率']
         
-        # 修正: .mapを使用
         st.dataframe(
             res[display_cols].sort_values('差枚', ascending=False)
             .style.format({
