@@ -412,10 +412,20 @@ with tab1:
         total_cls = "val-plus" if total_diff > 0 else "val-minus"
         avg_cls = "val-plus" if avg_diff > 0 else "val-minus"
         
-        end_stats_all = df_day.groupby('末尾', observed=False).agg(平均差枚=('差枚', 'mean'), 勝率=('差枚', lambda x: (x > 0).mean())).reset_index()
+        # --- 末尾集計（台数・勝利数追加） ---
+        end_stats_all = df_day.groupby('末尾', observed=False).agg(
+            平均差枚=('差枚', 'mean'),
+            勝率=('差枚', lambda x: (x > 0).mean()),
+            全台数=('台番', 'count'),
+            勝利台数=('差枚', lambda x: (x > 0).sum())
+        ).reset_index()
+        
         df_day_win = df_day[df_day['差枚'] > 0]
         if not df_day_win.empty:
-            end_stats_win = df_day_win.groupby('末尾', observed=False).agg(勝利台平均G数=('G数', 'mean'), 勝利台平均差枚=('差枚', 'mean')).reset_index()
+            end_stats_win = df_day_win.groupby('末尾', observed=False).agg(
+                勝利台平均G数=('G数', 'mean'),
+                勝利台平均差枚=('差枚', 'mean')
+            ).reset_index()
         else:
             end_stats_win = pd.DataFrame(columns=['末尾', '勝利台平均G数', '勝利台平均差枚'])
         
@@ -424,12 +434,23 @@ with tab1:
 
         if not strong_ends.empty:
             best_end = strong_ends.iloc[0]
-            end_html = f"🔢{best_end['末尾']} <br><span style='font-size:0.8rem; color:#d63384;'>全{int(best_end['平均差枚']):+}/勝{int(best_end['勝利台平均差枚']):+}</span>"
+            # 末尾 (勝/全) <br> 全+xxx / 勝+xxx
+            win_count = int(best_end['勝利台数'])
+            total_count = int(best_end['全台数'])
+            end_html = f"🔢{best_end['末尾']} ({win_count}/{total_count})<br><span style='font-size:0.8rem; color:#d63384;'>全{int(best_end['平均差枚']):+}/勝{int(best_end['勝利台平均差枚']):+}</span>"
         else: end_html = "-"
 
         win_machines = df_day[df_day['差枚'] > 0]
         win_g_means = win_machines.groupby('機種')['G数'].mean() if not win_machines.empty else pd.Series(dtype=float)
-        model_stats = df_day.groupby('機種', observed=False).agg(平均差枚=('差枚', 'mean'), 勝率=('差枚', lambda x: (x > 0).mean()), 平均G数=('G数', 'mean'), 台数=('台番', 'count')).reset_index()
+        
+        # --- 機種別集計（勝利台数追加） ---
+        model_stats = df_day.groupby('機種', observed=False).agg(
+            平均差枚=('差枚', 'mean'), 
+            勝率=('差枚', lambda x: (x > 0).mean()),
+            勝利台数=('差枚', lambda x: (x > 0).sum()),
+            平均G数=('G数', 'mean'), 
+            台数=('台番', 'count')
+        ).reset_index()
         
         models_html_parts = []
         displayed_models = set()
@@ -447,7 +468,10 @@ with tab1:
             elif row['平均G数'] >= 7000: icon = "<span class='icon-spin'>🌀</span>"
             if not icon and row['勝率'] >= 0.5 and win_avg_g >= 7000: icon = "<span class='icon-circle'>○</span>"
             if icon and m_name not in displayed_models:
-                models_html_parts.append(f"<span class='model-line'>{icon} {m_name}({int(row['平均差枚']):+})</span>"); displayed_models.add(m_name)
+                # 機種名 (勝/全 差枚)
+                w_num = int(row['勝利台数'])
+                t_num = int(row['台数'])
+                models_html_parts.append(f"<span class='model-line'>{icon} {m_name}({w_num}/{t_num} {int(row['平均差枚']):+})</span>"); displayed_models.add(m_name)
 
         models_html = "".join(models_html_parts) if models_html_parts else "-"
         table_rows += f'<tr><td class="td-date">{date_str}</td><td class="td-total {total_cls}">{total_diff:+,}</td><td class="td-avg {avg_cls}">{avg_diff:+,}</td><td class="td-g">{avg_g:,}</td><td class="td-end">{end_html}</td><td class="td-models">{models_html}</td></tr>'
@@ -539,7 +563,6 @@ with tab4:
         
         display_cols = ['日付','機種','台番','🍇確率','差枚','G数','合算確率','BIG確率','REG確率']
         
-        # ▼ ここで確率の表示フォーマットを指定 (小数点第1位まで)
         st.dataframe(
             res[display_cols].sort_values('差枚', ascending=False)
             .style.format({
