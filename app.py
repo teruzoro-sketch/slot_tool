@@ -39,16 +39,41 @@ MAKER_DICT = {
     "🔔 その他": ["ビンゴ", "ジャックポット", "ウルトラマン", "ワンパンマン", "リコリス"]
 }
 
-# ▼ ブドウ逆算用の機種スペック定数
-GRAPE_SPECS = {
-    "マイジャグ":     {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
-    "ファンキー":     {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
-    "アイム":         {"bb_net": 252, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 33.0, "cherry_pay": 2},
-    "ハッピー":       {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
-    "ゴージャグ":     {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 33.0, "cherry_pay": 2},
-    "ミスター":       {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
-    "ガールズ":       {"bb_net": 240, "rb_net": 96, "grape_pay": 8, "replay_prob": 7.3, "cherry_prob": 36.0, "cherry_pay": 2},
-}
+# --- ブドウ逆算ロジック (v2) ---
+def calc_grape_prob_v2(row):
+    specs = {
+        "マイジャグ": {"bb": 240, "rb": 96, "grape_pay": 8, "cherry_pay": 2, "replay": 7.298, "cherry": 36.0},
+        "ファンキー": {"bb": 240, "rb": 96, "grape_pay": 8, "cherry_pay": 2, "replay": 7.3,  "cherry": 36.0},
+        "アイム":     {"bb": 252, "rb": 96, "grape_pay": 8, "cherry_pay": 4, "replay": 7.3,  "cherry": 33.0},
+        "ハッピー":   {"bb": 240, "rb": 96, "grape_pay": 8, "cherry_pay": 2, "replay": 7.3,  "cherry": 36.0},
+        "ゴージャグ": {"bb": 240, "rb": 96, "grape_pay": 8, "cherry_pay": 2, "replay": 7.3,  "cherry": 33.0},
+        "ガールズ":   {"bb": 240, "rb": 96, "grape_pay": 8, "cherry_pay": 2, "replay": 7.3,  "cherry": 36.0},
+        "ミスター":   {"bb": 240, "rb": 96, "grape_pay": 8, "cherry_pay": 2, "replay": 7.3,  "cherry": 36.0},
+        "ミラクル":   {"bb": 240, "rb": 96, "grape_pay": 8, "cherry_pay": 2, "replay": 7.3,  "cherry": 36.0},
+    }
+    
+    target_spec = None
+    for k, v in specs.items():
+        if k in str(row['機種']): target_spec = v; break
+    
+    if not target_spec or row['G数'] < 500: return 0.0
+
+    g = row['G数']; diff = row['差枚']; bb = row['BB']; rb = row['RB']
+    s = target_spec
+    
+    bonus_net = (bb * s['bb']) + (rb * s['rb'])
+    est_cherry_count = g / s['cherry']
+    cherry_pay_total = est_cherry_count * s['cherry_pay']
+    est_replay_count = g / s['replay']
+    normal_in = (g * 3) - (est_replay_count * 3)
+    grape_pay_total = diff - bonus_net - cherry_pay_total + normal_in
+    
+    if grape_pay_total > 0:
+        est_grape_count = grape_pay_total / s['grape_pay']
+        if est_grape_count > 0: return g / est_grape_count
+    return 0.0
+
+def calc_grape_prob(row): return calc_grape_prob_v2(row)
 
 def detect_maker(model_name):
     for maker, keywords in MAKER_DICT.items():
@@ -56,24 +81,9 @@ def detect_maker(model_name):
             if kw in model_name: return maker
     return "その他"
 
-def calc_grape_prob(row):
-    spec = None
-    for k, v in GRAPE_SPECS.items():
-        if k in str(row['機種']): spec = v; break
-    if spec and row['G数'] > 500:
-        est_cherry = row['G数'] / spec['cherry_prob']
-        est_replay = row['G数'] / spec['replay_prob']
-        numerator = (row['差枚'] - (row['BB']*spec['bb_net']) - (row['RB']*spec['rb_net']) - (est_cherry*(spec['cherry_pay']-3)) + (row['G数']*3))
-        est_grape_count = numerator / spec['grape_pay']
-        if est_grape_count > 0:
-            prob = row['G数'] / est_grape_count
-            if 4.0 <= prob <= 8.0: return prob
-    return 0.0
-
 st.markdown("""
     <style>
         .main .block-container { max-width: 100% !important; padding: 1rem 1rem 3rem 1rem !important; }
-        div[data-testid="stDataFrame"] div[role="gridcell"] { white-space: pre-wrap !important; line-height: 1.5 !important; display: flex; align-items: center; }
         .custom-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .custom-table th { background-color: #f8f9fa; padding: 12px 8px; text-align: center; border: 1px solid #dee2e6; font-weight: bold; color: #495057; }
         .custom-table td { padding: 12px 10px; border: 1px solid #dee2e6; vertical-align: top; background-color: #fff; line-height: 1.6; color: #333; }
@@ -277,6 +287,7 @@ if filter_info: st.info(f"⚡ フィルター: {' / '.join(filter_info)}")
 
 tab1, tab2, tab3, tab4 = st.tabs(["📅 日別レポート", "🔥 店長推し分析 (機種)", "🕵️‍♀️ 不発・並び発掘", "🔍 鉄板台サーチ"])
 
+# --- Tab 1: 日別レポート ---
 with tab1:
     st.subheader("📅 日別サマリー (3ヶ月一覧)")
     sorted_dates = sorted(df_all['日付'].unique(), reverse=True)
@@ -306,7 +317,7 @@ with tab1:
             st.markdown("##### 🔢 末尾別 平均差枚数")
             end_stats_graph = raw_df_day.groupby('末尾').agg(平均差枚=('差枚', 'mean')).reset_index()
             fig_end = px.bar(end_stats_graph, x='末尾', y='平均差枚', color='平均差枚', color_continuous_scale='Bluered_r')
-            st.plotly_chart(fig_end, width="stretch")
+            st.plotly_chart(fig_end) # 引数なしでWarning回避
             
             def calc_prob_safe(g, c): return round(g / c, 1) if c > 0 else 9999.0
             raw_df_day['BIG確率'] = raw_df_day.apply(lambda x: calc_prob_safe(x['G数'], x['BB']), axis=1)
@@ -317,6 +328,7 @@ with tab1:
             if selected_models: raw_df_day = raw_df_day[raw_df_day['機種'].isin(selected_models)]
             
             final_df = raw_df_day[['機種', '台番', '末尾', '差枚', 'G数', 'BB', 'RB', '合成', 'BIG確率', 'REG確率', '合算確率']].sort_values('差枚', ascending=False)
+            # Warning回避: width="stretch"
             st.dataframe(final_df.style.format({'G数': '{:,}', 'BIG確率': '1/{:.1f}', 'REG確率': '1/{:.1f}', '合算確率': '1/{:.1f}'}), column_config={"差枚": st.column_config.NumberColumn("差枚", format="%+d"), "機種": st.column_config.TextColumn("機種名", width="medium")}, height=400, width="stretch")
             total_diff = int(final_df['差枚'].sum()); st.caption(f"📊 表示中の合計: {len(final_df)}台 / 総差枚: {total_diff:+d}枚")
         else: st.info("データがありません")
@@ -430,24 +442,135 @@ with tab1:
     if len(display_dates) > 0: st.markdown(f'<table class="custom-table">{table_headers}<tbody>{table_rows}</tbody></table>', unsafe_allow_html=True)
     else: st.info("表示できるデータがありません")
 
+# --- Tab 2: 🔥 店長推し分析 (機種別) + 詳細履歴 (コンパクト化移植) ---
 with tab2:
-    st.subheader("🔥 店長推し分析 (機種別)")
+    st.subheader("🔥 店長推し分析 (機種別・全台データ)")
     if not df_all.empty:
-        stats = df_all.groupby('機種', observed=False).agg(平均差枚=('差枚', 'mean'), 勝率=('差枚', lambda x: (x>0).mean()*100), 平均G数=('G数', 'mean'), サンプル数=('台番', 'count'), 合計差枚=('差枚', 'sum')).reset_index()
+        stats = df_all.groupby('機種', observed=False).agg(
+            平均差枚=('差枚', 'mean'), 
+            勝率=('差枚', lambda x: (x>0).mean()*100), 
+            平均G数=('G数', 'mean'), 
+            サンプル数=('台番', 'count'), 
+            合計差枚=('差枚', 'sum')
+        ).reset_index()
         valid = stats[stats['サンプル数'] >= 5].copy()
         if not valid.empty:
-            c_view1, c_view2 = st.columns(2)
-            show_labels = c_view1.toggle("機種名を表示", value=True)
-            show_only_plus = c_view2.toggle("プラス機種のみ", value=False)
-            if show_only_plus: valid = valid[valid['平均差枚'] > 0]
-            fig = px.scatter(valid, x="勝率", y="平均差枚", size="平均G数", color="合計差枚", hover_name="機種", text="機種" if show_labels else None, color_continuous_scale=['blue', 'white', 'red'], range_color=[-30000, 30000], size_max=60)
-            fig.update_layout(height=550, font=dict(size=14), xaxis=dict(title="勝率 (%)", title_font=dict(size=16), tickfont=dict(size=14)), yaxis=dict(title="平均差枚 (枚)", title_font=dict(size=16), tickfont=dict(size=14)), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), margin=dict(l=20, r=20, t=40, b=20))
-            if show_labels: fig.update_traces(textposition='top center')
-            st.plotly_chart(fig, width="stretch")
-            st.markdown("##### 📋 ランキングデータ")
-            st.dataframe(valid[['機種', '勝率', '平均差枚', '平均G数', 'サンプル数']].sort_values('平均差枚', ascending=False).style.format({'勝率': '{:.1f}%', '平均差枚': '{:+.0f}枚', '平均G数': '{:,.0f}G'}), width="stretch", height=300)
-        else: st.warning("集計に必要なデータ数が足りません（サンプル数5以上）")
-    else: st.info("データがありません")
+            with st.expander("📊 機種全体の相関図を開く", expanded=False):
+                c_view1, c_view2 = st.columns(2)
+                show_labels = c_view1.toggle("機種名を表示", value=True)
+                show_only_plus = c_view2.toggle("プラス機種のみ", value=False)
+                if show_only_plus: valid = valid[valid['平均差枚'] > 0]
+                fig = px.scatter(valid, x="勝率", y="平均差枚", size="平均G数", color="合計差枚", hover_name="機種", text="機種" if show_labels else None, color_continuous_scale=['blue', 'white', 'red'], range_color=[-30000, 30000], size_max=60)
+                fig.update_layout(height=500, xaxis_title="勝率 (%)", yaxis_title="平均差枚 (枚)")
+                if show_labels: fig.update_traces(textposition='top center')
+                st.plotly_chart(fig)
+
+    st.markdown("---")
+    st.subheader("🕵️‍♂️ 台番別・詳細履歴 (設定判別特化)")
+    st.caption("ジャグラー系は **ブドウ逆算** と **REG確率からの設定推測** を自動表示します。")
+
+    if not df_all_raw.empty:
+        model_list = sorted(df_all_raw['機種'].unique())
+        default_idx = 0
+        for i, m in enumerate(model_list):
+            if "マイジャグ" in m: default_idx = i; break
+        
+        target_model = st.selectbox("機種を選択", model_list, index=default_idx, key="detail_model_select_html")
+        is_juggler = any(kw in target_model for kw in ["ジャグラー", "マイジャグ", "ファンキー", "アイム", "ゴージャグ", "ハッピー", "ガールズ", "ミスター", "ミラクル"])
+
+        subset = df_all_raw[df_all_raw['機種'] == target_model].copy()
+        
+        if not subset.empty:
+            latest_date = subset['日付'].max()
+            start_date = latest_date - timedelta(days=6)
+            df_view = subset[subset['日付'] >= start_date].copy()
+            dates = sorted(df_view['日付'].unique(), reverse=True)
+            machines = sorted(df_view['台番'].unique())
+            
+            df_view['3日フラグ'] = df_view['日付'] >= (latest_date - timedelta(days=2))
+            
+            machine_stats = {}
+            for m in machines:
+                m_rows = df_view[df_view['台番'] == m]
+                sum_7 = m_rows['差枚'].sum()
+                sum_3 = m_rows[m_rows['3日フラグ']]['差枚'].sum()
+                machine_stats[m] = {'sum3': sum_3, 'sum7': sum_7}
+            
+            data_map = {}
+            for idx, row in df_view.iterrows():
+                m = row['台番']
+                d = row['日付'].strftime('%Y-%m-%d')
+                data_map.setdefault(m, {})[d] = row
+
+            # ▼▼▼ コンパクト化HTML実装 (移植) ▼▼▼
+            html = """<style>
+.history-table { width: 100%; border-collapse: collapse; font-family: "Meiryo", sans-serif; font-size: 0.75rem; } 
+.history-table th { background-color: #f0f2f6; border: 1px solid #ccc; padding: 4px 2px; text-align: center; white-space: nowrap; font-size: 0.75rem; position: sticky; top: 0; z-index: 10; height: 30px; }
+.history-table td { border: 1px solid #ccc; padding: 2px; text-align: center; vertical-align: middle; background-color: #fff; min-width: 95px; height: 1px; } 
+.h-machine { font-weight: bold; font-size: 0.9rem; background-color: #fafafa; position: sticky; left: 0; z-index: 9; border-right: 2px solid #bbb !important; width: 50px; }
+.h-total { font-weight: bold; font-size: 0.85rem; }
+.cell-container { display: flex; flex-direction: column; justify-content: center; height: 100%; min-height: 55px; } 
+.row-top { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #eee; margin-bottom: 1px; padding-bottom: 1px; }
+.cell-diff { font-size: 0.95rem; font-weight: bold; line-height: 1; }
+.cell-g { font-size: 0.7rem; color: #666; }
+.row-mid { font-size: 0.7rem; color: #444; line-height: 1.1; text-align: center; white-space: nowrap; }
+.prob-box { background-color: #f4f4f4; padding: 0 2px; border-radius: 2px; margin-right: 2px; font-weight: bold; }
+.row-bot { font-size: 0.7rem; color: purple; font-weight: bold; margin-top: 1px; line-height: 1; border-top: 1px dotted #eee; }
+.est-tag { font-size: 0.65rem; display: inline-block; padding: 0px 3px; border-radius: 3px; color: white; margin-left: 2px; vertical-align: middle; }
+.est-6 { background-color: #e91e63; }
+.est-456 { background-color: #ff9800; }
+.est-low { background-color: #fdd835; color: #333; }
+.c-plus { color: #d32f2f; }
+.c-minus { color: #1e88e5; }
+</style>
+<div style="overflow-x: auto; max-height: 800px; overflow-y: auto; border: 1px solid #ccc;">
+<table class="history-table">
+<thead>
+<tr>
+<th class="h-machine" style="z-index: 11;">台番</th>
+<th>3日計</th>
+<th>7日計</th>"""
+            for d in dates: html += f"<th>{d.strftime('%m/%d')}</th>"
+            html += "</tr></thead><tbody>"
+            
+            for m in machines:
+                stats = machine_stats[m]
+                cls_3 = "c-plus" if stats['sum3'] > 0 else "c-minus"
+                cls_7 = "c-plus" if stats['sum7'] > 0 else "c-minus"
+                html += f"<tr><td class='h-machine'>{m}</td><td class='h-total {cls_3}'>{stats['sum3']:+d}</td><td class='h-total {cls_7}'>{stats['sum7']:+d}</td>"
+                
+                for d in dates:
+                    d_key = d.strftime('%Y-%m-%d')
+                    if d_key in data_map.get(m, {}):
+                        row = data_map[m][d_key]
+                        diff = int(row['差枚']); g = int(row['G数']); bb = int(row['BB']); rb = int(row['RB'])
+                        total_bon = bb + rb
+                        t_prob = f"1/{g//total_bon}" if total_bon > 0 else "-"
+                        # 確率分母のみ表示してスペース節約
+                        bb_denom = f"/{g//bb}" if bb > 0 else "-"
+                        rb_denom = f"/{g//rb}" if rb > 0 else "-"
+                        diff_cls = "c-plus" if diff > 0 else "c-minus"
+                        
+                        top_html = f"<div class='row-top'><span class='cell-diff {diff_cls}'>{diff:+d}</span><span class='cell-g'>{g}G</span></div>"
+                        mid_html = f"<div class='row-mid'><span class='prob-box'>合{t_prob}</span> B{bb} R{rb}</div>"
+                        
+                        jug_html = ""
+                        if is_juggler and g > 500:
+                            grape = calc_grape_prob_v2(row)
+                            if 3.5 <= grape <= 9.0:
+                                est = ""
+                                reg_denom = g / rb if rb > 0 else 9999
+                                if reg_denom <= 255 and grape <= 5.8: est = "<span class='est-tag est-6'>6?</span>"
+                                elif reg_denom <= 280 and grape <= 6.0: est = "<span class='est-tag est-456'>45?</span>"
+                                elif reg_denom <= 320 and grape <= 6.2: est = "<span class='est-tag est-low'>34?</span>"
+                                jug_html = f"<div class='row-bot'>🍇1/{grape:.1f}{est}</div>"
+                        
+                        html += f"<td><div class='cell-container'>{top_html}{mid_html}{jug_html}</div></td>"
+                    else: html += "<td style='background:#f9f9f9; color:#ccc'>-</td>"
+                html += "</tr>"
+            html += "</tbody></table></div>"
+            st.markdown(html, unsafe_allow_html=True)
+        else: st.warning("データが見つかりません")
 
 with tab3:
     st.subheader("🕵️‍♀️ 不発・塊検知")
@@ -508,12 +631,14 @@ with tab4:
             st.plotly_chart(pie, width="stretch")
             
         st.markdown("##### 📋 エース台番リスト")
+        # Warning回避: width="stretch"
         st.dataframe(stats.head(20).style.format({'平均差枚':'{:.0f}'}), width="stretch")
         st.markdown('</div>', unsafe_allow_html=True)
         st.subheader("📝 抽出データ全リスト (ブドウ逆算付き)")
         
         display_cols = ['日付','機種','台番','🍇確率','差枚','G数','合算確率','BIG確率','REG確率']
         
+        # Warning回避: width="stretch"
         st.dataframe(
             res[display_cols].sort_values('差枚', ascending=False)
             .style.format({
